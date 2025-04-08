@@ -52,20 +52,20 @@ function formatMessage(emoji, title, content = '') {
 
 // Xử lý lỗi
 bot.catch((err, ctx) => {
-	let errorMessage = `${EMOJI.ERROR} <b>Đã xảy ra lỗi</b>\n`;
+	console.error('Bot error:', err);
 
+	// Chỉ ghi log lỗi, không gửi thông báo lên Telegram
 	if (err.message.includes('timeout')) {
-		errorMessage +=
-			'Quá trình xử lý mất quá nhiều thời gian. Vui lòng thử với video ngắn hơn.';
+		console.error(
+			'Quá trình xử lý mất quá nhiều thời gian. Video có thể quá dài.'
+		);
 	} else if (err.message.includes('whisper')) {
-		errorMessage += 'Không thể trích xuất phụ đề. ' + err.message;
+		console.error('Không thể trích xuất phụ đề:', err.message);
 	} else if (err.message.includes('download')) {
-		errorMessage += 'Không thể tải video từ URL đã cung cấp.';
+		console.error('Không thể tải video từ URL đã cung cấp.');
 	} else {
-		errorMessage += 'Vui lòng thử lại sau.';
+		console.error('Lỗi không xác định:', err.message);
 	}
-
-	ctx.reply(errorMessage, { parse_mode: 'HTML' });
 });
 
 // Kiểm tra cấu hình whisper khi khởi động
@@ -585,26 +585,23 @@ async function processSubtitle(ctx, videoUrl, prompt) {
 	} catch (error) {
 		console.error('Error processing subtitle command:', error);
 
-		let errorMessage = `${EMOJI.ERROR} <b>Đã xảy ra lỗi</b>\n`;
-
+		// Chỉ ghi log lỗi, không gửi thông báo lên Telegram
 		if (error.message.includes('timeout')) {
-			errorMessage +=
-				'Quá trình xử lý mất quá nhiều thời gian. Vui lòng thử với video ngắn hơn.';
+			console.error(
+				'Quá trình xử lý mất quá nhiều thời gian. Video có thể quá dài.'
+			);
 		} else if (error.message.includes('whisper')) {
-			errorMessage += 'Không thể trích xuất phụ đề. ' + error.message;
+			console.error('Không thể trích xuất phụ đề:', error.message);
 		} else if (error.message.includes('download')) {
-			errorMessage += 'Không thể tải video từ URL đã cung cấp.';
+			console.error('Không thể tải video từ URL đã cung cấp.');
 		} else {
-			errorMessage += 'Vui lòng thử lại sau.';
+			console.error('Lỗi không xác định:', error.message);
 		}
 
-		ctx.reply(errorMessage, {
-			parse_mode: 'HTML',
-			...Markup.inlineKeyboard([
-				[Markup.button.callback('Thử lại', 'create_subtitle')],
-				[Markup.button.callback('Quay lại menu chính', 'start')],
-			]),
-		});
+		// Đặt lại trạng thái người dùng nếu có
+		if (ctx && ctx.from && ctx.from.id && userStates[ctx.from.id]) {
+			userStates[ctx.from.id].state = 'idle';
+		}
 	} finally {
 		// Xóa các file tạm sau khi hoàn tất
 		setTimeout(async () => {

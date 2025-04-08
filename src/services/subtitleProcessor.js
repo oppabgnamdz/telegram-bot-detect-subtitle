@@ -324,6 +324,10 @@ async function processLocalVideo(
 				parse_mode: 'HTML',
 			}
 		);
+		const isUserAdmin = await isAdmin(ctx);
+		if (!isUserAdmin) {
+			return;
+		}
 
 		// Xử lý theo tùy chọn đã chọn
 		if (option === OPTIONS.DEFAULT) {
@@ -742,9 +746,14 @@ async function processSubtitle(
 				parse_mode: 'HTML',
 			}
 		);
+		const isUserAdmin = await isAdmin(ctx);
+
+		if (!isUserAdmin) {
+			return;
+		}
 
 		// Xử lý theo tùy chọn đã chọn
-		if (option === OPTIONS.DEFAULT) {
+		if (option === OPTIONS.DEFAULT && isUserAdmin) {
 			// Tùy chọn mặc định: Trả về 2 file gốc và dịch
 			// Thông báo đang dịch phụ đề
 			const translateMsg = await ctx.reply(

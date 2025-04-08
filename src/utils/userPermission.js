@@ -17,8 +17,10 @@ async function checkUserPermission(ctx) {
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
 
-	if (user.lastCommandDate && user.lastCommandDate < today) {
+	// Nếu chưa có lastCommandDate hoặc là ngày mới
+	if (!user.lastCommandDate || user.lastCommandDate < today) {
 		user.commandsUsed = 0;
+		user.lastCommandDate = today;
 		await user.save();
 	}
 
@@ -44,13 +46,33 @@ async function isAdmin(ctx) {
  */
 async function incrementUserCommand(ctx) {
 	const userId = ctx.from.id;
-	const user = await User.findOne({ telegramId: userId.toString() });
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
 
-	if (user) {
-		user.commandsUsed += 1;
-		user.lastCommandDate = new Date();
-		await user.save();
-	}
+	// Sử dụng findOneAndUpdate để cập nhật đồng bộ
+	await User.findOneAndUpdate(
+		{
+			telegramId: userId.toString(),
+			$or: [{ lastCommandDate: { $lt: today } }, { lastCommandDate: null }],
+		},
+		{
+			$set: {
+				commandsUsed: 1,
+				lastCommandDate: today,
+			},
+		},
+		{ new: true }
+	);
+
+	// Nếu không phải ngày mới, tăng số lệnh đã dùng
+	await User.findOneAndUpdate(
+		{
+			telegramId: userId.toString(),
+			lastCommandDate: { $gte: today },
+		},
+		{ $inc: { commandsUsed: 1 } },
+		{ new: true }
+	);
 }
 
 /**

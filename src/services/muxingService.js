@@ -129,7 +129,7 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 
 			// Phương pháp 2: Sử dụng -vf subtitles (tốt cho nhiều định dạng)
 			const command2 =
-				`ffmpeg -i "${videoPath}" -vf "subtitles=${subtitlePath}:force_style='FontName=${finalOptions.font},FontSize=${finalOptions.fontSize},PrimaryColour=&HFFFFFF,BackColour=&H00000000,BorderStyle=3,Outline=1,Shadow=1,Alignment=2'" ` +
+				`ffmpeg -i "${videoPath}" -vf "subtitles=${subtitlePath}:force_style='FontName=${finalOptions.font},FontSize=${finalOptions.fontSize},PrimaryColour=&HFFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=1,Shadow=1,Alignment=2'" ` +
 				`-c:a copy "${outputPath}"`;
 
 			// Thử phương pháp 2 trước (render trực tiếp)

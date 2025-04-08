@@ -989,6 +989,7 @@ async function downloadTorrent(torrentId, outputPath) {
  */
 async function downloadVideo(url, fileName, maxRetries = 3) {
 	let retries = 0;
+	let filePath;
 
 	while (retries < maxRetries) {
 		try {
@@ -996,7 +997,7 @@ async function downloadVideo(url, fileName, maxRetries = 3) {
 
 			// Luôn sử dụng tên file an toàn, bỏ qua tham số fileName
 			const safeFileName = generateSafeFileName(url);
-			const filePath = path.join(config.uploadPath, safeFileName);
+			filePath = path.join(config.uploadPath, safeFileName);
 
 			// Kiểm tra loại URL để sử dụng phương thức tải phù hợp
 			if (isMagnetUrl(url) || isTorrentUrl(url)) {
@@ -1115,6 +1116,17 @@ async function downloadVideo(url, fileName, maxRetries = 3) {
 			console.error(
 				`Lần thử ${retries + 1}/${maxRetries} thất bại: ${error.message}`
 			);
+
+			// Xóa file nếu đã tải về nhưng xử lý thất bại
+			if (filePath && fs.existsSync(filePath)) {
+				try {
+					await fs.unlink(filePath);
+					console.log('Đã xóa file tải về do lỗi:', filePath);
+				} catch (unlinkError) {
+					console.error('Lỗi khi xóa file:', unlinkError);
+				}
+			}
+
 			retries++;
 
 			if (retries >= maxRetries) {

@@ -57,13 +57,13 @@ async function getUploadUrl() {
  * @returns {Promise<string>} - URL của video trên Streamtape
  */
 async function uploadToStreamtape(videoPath) {
+	let finalVideoPath = videoPath;
 	try {
 		// Kiểm tra kích thước file
 		const stats = fs.statSync(videoPath);
 		const fileSizeInMB = stats.size / (1024 * 1024);
 
 		// Nếu file lớn hơn 100MB, thử nén trước
-		let finalVideoPath = videoPath;
 		if (fileSizeInMB > 100) {
 			console.log(`File quá lớn (${fileSizeInMB.toFixed(2)}MB), đang nén...`);
 			finalVideoPath = await compressVideo(videoPath);
@@ -107,6 +107,16 @@ async function uploadToStreamtape(videoPath) {
 		}
 	} catch (error) {
 		console.error('Error uploading to Streamtape:', error);
+
+		// Xóa file đã nén nếu có
+		if (finalVideoPath !== videoPath && fs.existsSync(finalVideoPath)) {
+			try {
+				fs.unlinkSync(finalVideoPath);
+				console.log('Đã xóa file nén do lỗi upload:', finalVideoPath);
+			} catch (unlinkError) {
+				console.error('Lỗi khi xóa file nén:', unlinkError);
+			}
+		}
 
 		// Xử lý lỗi 413 (Request Entity Too Large)
 		if (error.response && error.response.status === 413) {

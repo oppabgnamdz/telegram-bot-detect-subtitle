@@ -169,6 +169,7 @@ async function handleFileUpload(ctx) {
 		return;
 	}
 
+	let filePath;
 	try {
 		const isDocument = !!ctx.message.document;
 		const fileId = isDocument
@@ -186,7 +187,7 @@ async function handleFileUpload(ctx) {
 		}
 
 		const safeFileName = createSafeFileName(fileName, isDocument);
-		const filePath = path.join(config.uploadPath, safeFileName);
+		filePath = path.join(config.uploadPath, safeFileName);
 
 		if (await downloadFileFromTelegram(ctx, fileId, filePath)) {
 			await handleSuccessfulUpload(
@@ -207,6 +208,16 @@ async function handleFileUpload(ctx) {
 			{ parse_mode: 'HTML' }
 		);
 		updateUserState(userId, 'idle');
+
+		// Xóa file nếu đã tải về nhưng xử lý thất bại
+		if (filePath && fs.existsSync(filePath)) {
+			try {
+				await fs.unlink(filePath);
+				console.log('Đã xóa file upload do lỗi:', filePath);
+			} catch (unlinkError) {
+				console.error('Lỗi khi xóa file:', unlinkError);
+			}
+		}
 	}
 }
 

@@ -96,6 +96,19 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 			}
 		}
 
+		// Lấy độ dài video để tính phần trăm tiến độ
+		let videoDuration = 0;
+		await new Promise((resolve) => {
+			const durationCommand = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`;
+			exec(durationCommand, (err, stdout, stderr) => {
+				if (!err && stdout) {
+					videoDuration = parseFloat(stdout.trim());
+					console.log(`Video duration: ${videoDuration} seconds`);
+				}
+				resolve();
+			});
+		});
+
 		// Tạo tên file kết quả ngẫu nhiên để tránh xung đột
 		const randomHash = crypto.randomBytes(8).toString('hex');
 		const outputFileName = `muxed_${randomHash}${path.extname(videoPath)}`;
@@ -195,6 +208,12 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 				if (statusText.includes('time=')) {
 					process.stdout.write(`\rĐang xử lý: ${statusText}`);
 
+					// Thêm thông tin về tổng thời lượng video vào statusText
+					const enrichedStatusText =
+						videoDuration > 0
+							? `${statusText} (Duration: ${formatDuration(videoDuration)})`
+							: statusText;
+
 					// Gửi cập nhật lên Telegram
 					const now = Date.now();
 					if (
@@ -202,7 +221,7 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 						now - lastUpdateTime > STATUS_UPDATE_INTERVAL
 					) {
 						lastUpdateTime = now;
-						lastStatus = statusText;
+						lastStatus = enrichedStatusText;
 
 						try {
 							const { ctx, messageId } = finalOptions.telegramInfo;
@@ -214,7 +233,7 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 									formatMessage(
 										'🔄',
 										'Đang ghép phụ đề vào video',
-										`<code>${statusText}</code>\n\n🔹 Tiến độ: ${extractProgress(statusText)}\n🔹 Tốc độ: ${extractSpeed(statusText)}\n🔹 Thời gian đã xử lý: ${extractTime(statusText)}`
+										`<code>${statusText}</code>\n\n🔹 Tiến độ: ${extractProgress(enrichedStatusText, videoDuration)}\n🔹 Tốc độ: ${extractSpeed(statusText)}\n🔹 Thời gian đã xử lý: ${extractTime(statusText)}`
 									),
 									{ parse_mode: 'HTML' }
 								)
@@ -272,11 +291,55 @@ function getDirectDownloadLink(filePath) {
 	return fullDownloadUrl;
 }
 
+// Format thời lượng từ giây sang định dạng HH:MM:SS.ss
+function formatDuration(seconds) {
+	const hours = Math.floor(seconds / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+	const secs = seconds % 60;
+	return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toFixed(2).padStart(5, '0')}`;
+}
+
 // Các hàm trích xuất thông tin từ chuỗi trạng thái ffmpeg
-function extractProgress(statusText) {
-	const timeMatch = statusText.match(/time=(\d+:\d+:\d+\.\d+)/);
+function extractProgress(statusText, videoDuration) {
+	const timeMatch = statusText.match(/time=(\d+):(\d+):(\d+\.\d+)/);
+
 	if (timeMatch) {
-		return timeMatch[1] || 'Đang xử lý...';
+		// Nếu có thời gian hiện tại, chuyển đổi sang giây
+		const currentHours = parseInt(timeMatch[1]);
+		const currentMinutes = parseInt(timeMatch[2]);
+		const currentSeconds = parseFloat(timeMatch[3]);
+		const currentTimeInSeconds =
+			currentHours * 3600 + currentMinutes * 60 + currentSeconds;
+
+		// Nếu có thông tin về tổng thời lượng, tính phần trăm
+		if (videoDuration > 0) {
+			const percentage = Math.min(
+				100,
+				Math.round((currentTimeInSeconds / videoDuration) * 100)
+			);
+			return `${percentage}%`;
+		}
+
+		// Nếu không có thông tin về tổng thời lượng, tìm trong chuỗi trạng thái
+		const durationMatch = statusText.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
+		if (durationMatch) {
+			const totalHours = parseInt(durationMatch[1]);
+			const totalMinutes = parseInt(durationMatch[2]);
+			const totalSeconds = parseFloat(durationMatch[3]);
+			const totalDurationInSeconds =
+				totalHours * 3600 + totalMinutes * 60 + totalSeconds;
+
+			if (totalDurationInSeconds > 0) {
+				const percentage = Math.min(
+					100,
+					Math.round((currentTimeInSeconds / totalDurationInSeconds) * 100)
+				);
+				return `${percentage}%`;
+			}
+		}
+
+		// Nếu không có thông tin về tổng thời lượng, chỉ trả về thời gian hiện tại
+		return `${Math.round(currentTimeInSeconds)} giây`;
 	}
 	return 'Đang xử lý...';
 }

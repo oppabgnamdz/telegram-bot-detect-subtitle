@@ -284,6 +284,7 @@ async function translateSubtitles(srtPath, prompt, chatId, bot) {
 
 		// Thông báo hoàn thành và chi phí cho người dùng
 		if (chatId && bot) {
+			// Gửi thông báo thống kê
 			await bot.telegram.sendMessage(
 				chatId,
 				`✅ Đã dịch xong và lưu file: ${fileName}.vi.srt
@@ -292,6 +293,19 @@ Tổng số phụ đề: ${translatedSubtitles.length}
 • Tokens đầu vào: ${totalTokens.input.toLocaleString()}
 • Tokens đầu ra: ${totalTokens.output.toLocaleString()}
 • Chi phí: $${costInUSD.toFixed(4)} USD`
+			);
+
+			// Gửi file phụ đề đã dịch
+			await bot.telegram.sendDocument(
+				chatId,
+				{
+					source: translatedPath,
+					filename: `${fileName}.vi.srt`,
+				},
+				{
+					caption: `📝 File phụ đề đã dịch sang tiếng Việt`,
+					parse_mode: 'HTML',
+				}
 			);
 		}
 

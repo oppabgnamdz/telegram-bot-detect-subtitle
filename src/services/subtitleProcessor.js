@@ -279,6 +279,18 @@ async function processLocalVideo(
 			{ parse_mode: 'HTML' }
 		);
 
+		// Gửi file phụ đề gốc ngay sau khi trích xuất thành công
+		await ctx.replyWithDocument(
+			{
+				source: srtPath,
+				filename: path.basename(srtPath),
+			},
+			{
+				caption: `${EMOJI.SUBTITLE} Phụ đề gốc đã trích xuất`,
+				parse_mode: 'HTML',
+			}
+		);
+
 		// Xử lý theo tùy chọn đã chọn
 		if (option === OPTIONS.DEFAULT) {
 			// Tùy chọn mặc định: Trả về 2 file gốc và dịch
@@ -685,6 +697,18 @@ async function processSubtitle(
 			{ parse_mode: 'HTML' }
 		);
 
+		// Gửi file phụ đề gốc ngay sau khi trích xuất thành công
+		await ctx.replyWithDocument(
+			{
+				source: srtPath,
+				filename: path.basename(srtPath),
+			},
+			{
+				caption: `${EMOJI.SUBTITLE} Phụ đề gốc đã trích xuất`,
+				parse_mode: 'HTML',
+			}
+		);
+
 		// Xử lý theo tùy chọn đã chọn
 		if (option === OPTIONS.DEFAULT) {
 			// Tùy chọn mặc định: Trả về 2 file gốc và dịch
@@ -721,6 +745,11 @@ async function processSubtitle(
 				),
 				{ parse_mode: 'HTML' }
 			);
+			if (option === OPTIONS.DEFAULT) {
+				return;
+			}
+
+			// đã gửi file rồi
 
 			// Gửi file phụ đề gốc
 			await ctx.replyWithDocument(

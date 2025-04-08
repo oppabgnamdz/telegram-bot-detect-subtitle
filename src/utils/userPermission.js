@@ -1,63 +1,57 @@
 const User = require('../models/User');
 
 /**
- * Kiểm tra quyền người dùng
- * @param {object} ctx - Context của Telegraf
- * @returns {Promise<boolean>} - Trả về true nếu người dùng có quyền sử dụng lệnh
+ * Kiểm tra quyền truy cập của user
+ * @param {object} ctx - Context Telegraf
+ * @returns {Promise<boolean>} - true nếu user có quyền truy cập
  */
-const checkUserPermission = async (ctx) => {
-	try {
-		const telegramId = ctx.from.id.toString();
-		const currentDate = new Date();
-		currentDate.setHours(0, 0, 0, 0); // Đặt về 00:00:00 của ngày hiện tại
+async function checkUserPermission(ctx) {
+	const userId = ctx.from.id;
+	const user = await User.findOne({ telegramId: userId.toString() });
 
-		// Tìm người dùng hoặc tạo mới nếu chưa tồn tại
-		let user = await User.findOne({ telegramId });
-
-		if (!user) {
-			user = new User({
-				telegramId,
-				username: ctx.from.username,
-				firstName: ctx.from.first_name,
-				lastName: ctx.from.last_name,
-				role: 'default',
-				commandsUsed: 0,
-				lastCommandDate: null,
-			});
-		}
-
-		// Nếu là admin, luôn cho phép
-		if (user.role === 'admin') {
-			return true;
-		}
-
-		// Kiểm tra người dùng đã sử dụng lệnh trong ngày hôm nay chưa
-		const lastCommandDate = user.lastCommandDate;
-
-		// Nếu chưa sử dụng lệnh hôm nay hoặc chưa từng sử dụng lệnh
-		if (
-			!lastCommandDate ||
-			new Date(lastCommandDate).setHours(0, 0, 0, 0) < currentDate.getTime()
-		) {
-			user.commandsUsed = 1;
-			user.lastCommandDate = new Date();
-			await user.save();
-			return true;
-		}
-
-		// Kiểm tra số lệnh đã sử dụng trong ngày
-		if (user.commandsUsed < 1) {
-			user.commandsUsed += 1;
-			await user.save();
-			return true;
-		}
-
-		return false;
-	} catch (error) {
-		console.error('Lỗi kiểm tra quyền người dùng:', error);
+	if (!user) {
 		return false;
 	}
-};
+
+	// Reset số lệnh đã dùng nếu là ngày mới
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+
+	if (user.lastCommandDate && user.lastCommandDate < today) {
+		user.commandsUsed = 0;
+		await user.save();
+	}
+
+	// Kiểm tra giới hạn số lệnh
+	const MAX_COMMANDS_PER_DAY = 5; // Giới hạn 5 lệnh/ngày cho user default
+	return user.commandsUsed < MAX_COMMANDS_PER_DAY;
+}
+
+/**
+ * Kiểm tra xem user có phải là admin không
+ * @param {object} ctx - Context Telegraf
+ * @returns {Promise<boolean>} - true nếu user là admin
+ */
+async function isAdmin(ctx) {
+	const userId = ctx.from.id;
+	const user = await User.findOne({ telegramId: userId.toString() });
+	return user && user.role === 'admin';
+}
+
+/**
+ * Tăng số lệnh đã dùng của user
+ * @param {object} ctx - Context Telegraf
+ */
+async function incrementUserCommand(ctx) {
+	const userId = ctx.from.id;
+	const user = await User.findOne({ telegramId: userId.toString() });
+
+	if (user) {
+		user.commandsUsed += 1;
+		user.lastCommandDate = new Date();
+		await user.save();
+	}
+}
 
 /**
  * Cập nhật thông tin người dùng
@@ -83,25 +77,6 @@ const updateUserInfo = async (ctx) => {
 };
 
 /**
- * Đếm lệnh người dùng đã sử dụng
- * @param {object} ctx - Context của Telegraf
- */
-const incrementUserCommand = async (ctx) => {
-	try {
-		const telegramId = ctx.from.id.toString();
-
-		const user = await User.findOne({ telegramId });
-		if (user && user.role !== 'admin') {
-			user.commandsUsed += 1;
-			user.lastCommandDate = new Date();
-			await user.save();
-		}
-	} catch (error) {
-		console.error('Lỗi đếm lệnh người dùng:', error);
-	}
-};
-
-/**
  * Thiết lập người dùng thành admin
  * @param {string} telegramId - ID Telegram của người dùng
  * @returns {Promise<boolean>} - Trả về true nếu thành công
@@ -123,7 +98,8 @@ const setUserAsAdmin = async (telegramId) => {
 
 module.exports = {
 	checkUserPermission,
-	updateUserInfo,
+	isAdmin,
 	incrementUserCommand,
+	updateUserInfo,
 	setUserAsAdmin,
 };

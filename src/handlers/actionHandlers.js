@@ -17,6 +17,7 @@ const {
 const {
 	checkUserPermission,
 	incrementUserCommand,
+	isAdmin,
 } = require('../utils/userPermission');
 
 /**
@@ -179,6 +180,19 @@ async function handleOutputOption(ctx, option) {
 	if (userState.state !== 'waiting_for_output_option') {
 		return ctx.reply(
 			formatMessage(EMOJI.ERROR, 'Lỗi', 'Vui lòng bắt đầu lại quá trình.'),
+			{ parse_mode: 'HTML' }
+		);
+	}
+
+	// Kiểm tra quyền truy cập cho user default
+	const isUserAdmin = await isAdmin(ctx);
+	if (!isUserAdmin && option !== OPTIONS.DEFAULT) {
+		return ctx.reply(
+			formatMessage(
+				EMOJI.ERROR,
+				'Không có quyền truy cập',
+				'Tài khoản thường chỉ được phép sử dụng tùy chọn mặc định (Xuất file phụ đề).'
+			),
 			{ parse_mode: 'HTML' }
 		);
 	}

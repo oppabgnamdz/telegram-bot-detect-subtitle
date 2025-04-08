@@ -12,6 +12,7 @@ const { downloadVideo } = require('../utils/downloader');
 const { EMOJI, formatMessage, OPTIONS } = require('../utils/messageFormatter');
 const config = require('../config');
 const { uploadToStreamtape } = require('./streamtapeService');
+const { isAdmin } = require('../utils/userPermission');
 
 // Cấu hình thời gian chờ lâu hơn cho các Promise
 const BOT_TIMEOUT = 7200000; // 2 giờ (7,200,000 ms)
@@ -68,6 +69,39 @@ async function processSrtFile(ctx, srtPath, prompt, option = OPTIONS.DEFAULT) {
 			),
 			{ parse_mode: 'HTML' }
 		);
+
+		// Kiểm tra quyền truy cập OpenAI cho user default
+		const isUserAdmin = await isAdmin(ctx);
+		if (!isUserAdmin && option === OPTIONS.DEFAULT) {
+			// Nếu là user default và chọn option mặc định, chỉ trả về file gốc
+			await ctx.replyWithDocument(
+				{
+					source: srtPath,
+					filename: path.basename(srtPath),
+				},
+				{
+					caption: `${EMOJI.SUBTITLE} Phụ đề gốc`,
+					parse_mode: 'HTML',
+				}
+			);
+
+			// Thông báo hoàn thành
+			await ctx.reply(
+				formatMessage(
+					EMOJI.SUCCESS,
+					'Quá trình xử lý đã hoàn tất!',
+					'Bạn có thể bắt đầu tạo phụ đề mới.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
+						[Markup.button.callback('Quay lại menu chính', 'start')],
+					]),
+				}
+			);
+			return;
+		}
 
 		// Thông báo đang dịch phụ đề
 		const translateMsg = await ctx.reply(
@@ -183,11 +217,11 @@ async function processSrtFile(ctx, srtPath, prompt, option = OPTIONS.DEFAULT) {
 			}
 		);
 	} catch (error) {
-		console.error('Error processing SRT file:', error);
+		console.error('Lỗi xử lý file SRT:', error);
 		await ctx.reply(
 			formatMessage(
 				EMOJI.ERROR,
-				'Lỗi khi xử lý file SRT',
+				'Lỗi xử lý',
 				'Đã xảy ra lỗi khi xử lý file SRT. Vui lòng thử lại sau.'
 			),
 			{ parse_mode: 'HTML' }

@@ -20,6 +20,10 @@ const {
 	isMagnetUrl,
 	isTorrentUrl,
 } = require('../utils/downloader');
+const {
+	checkUserPermission,
+	incrementUserCommand,
+} = require('../utils/userPermission');
 
 /**
  * Xử lý lệnh /subtitle truyền thống
@@ -260,45 +264,79 @@ async function handleOutputOption(ctx, userId, optionText, userState) {
  * @param {object} ctx - Context Telegraf
  */
 async function handleTextMessage(ctx) {
-	const userId = ctx.from.id;
-	const userState = getUserState(userId);
+	try {
+		const text = ctx.message.text;
 
-	if (ctx.message.text.startsWith('/subtitle')) {
-		if (await handleLegacySubtitleCommand(ctx, userId)) {
-			return;
+		// Nếu người dùng gửi lệnh chứa create hoặc extract thì kiểm tra quyền
+		if (
+			text.toLowerCase().includes('create') ||
+			text.toLowerCase().includes('extract')
+		) {
+			const hasPermission = await checkUserPermission(ctx);
+			if (!hasPermission) {
+				await ctx.reply(
+					'🔒 Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+				);
+				return;
+			}
 		}
-	}
 
-	switch (userState.state) {
-		case 'waiting_for_url_or_file':
-		case 'waiting_for_url':
-			await handleVideoUrl(ctx, userId, ctx.message.text.trim());
-			break;
+		const userId = ctx.from.id;
+		const userState = getUserState(userId);
 
-		case 'waiting_for_prompt':
-			await handleTranslationPrompt(ctx, userId, ctx.message.text.trim());
-			break;
+		if (ctx.message.text.startsWith('/subtitle')) {
+			if (await handleLegacySubtitleCommand(ctx, userId)) {
+				return;
+			}
+		}
 
-		case 'waiting_for_output_option':
-			await handleOutputOption(ctx, userId, ctx.message.text.trim(), userState);
-			break;
+		switch (userState.state) {
+			case 'waiting_for_url_or_file':
+			case 'waiting_for_url':
+				await handleVideoUrl(ctx, userId, ctx.message.text.trim());
+				break;
 
-		default:
-			ctx.reply(
-				formatMessage(
-					EMOJI.START,
-					'Menu chính',
-					'Hãy chọn một trong các tùy chọn bên dưới:'
-				),
-				{
-					parse_mode: 'HTML',
-					...Markup.inlineKeyboard([
-						[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
-						[Markup.button.callback('Hướng dẫn sử dụng', 'help')],
-					]),
-				}
-			);
-			break;
+			case 'waiting_for_prompt':
+				await handleTranslationPrompt(ctx, userId, ctx.message.text.trim());
+				break;
+
+			case 'waiting_for_output_option':
+				await handleOutputOption(
+					ctx,
+					userId,
+					ctx.message.text.trim(),
+					userState
+				);
+				break;
+
+			default:
+				ctx.reply(
+					formatMessage(
+						EMOJI.START,
+						'Menu chính',
+						'Hãy chọn một trong các tùy chọn bên dưới:'
+					),
+					{
+						parse_mode: 'HTML',
+						...Markup.inlineKeyboard([
+							[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
+							[Markup.button.callback('Hướng dẫn sử dụng', 'help')],
+						]),
+					}
+				);
+				break;
+		}
+
+		// Nếu là URL video và xử lý thành công, tăng số lệnh đã dùng
+		if (
+			(isValidUrl(text) && text.match(/\.(mp4|mov|avi|mkv)$/)) ||
+			text.includes('youtube.com') ||
+			text.includes('youtu.be')
+		) {
+			await incrementUserCommand(ctx);
+		}
+	} catch (error) {
+		// ... existing code ...
 	}
 }
 

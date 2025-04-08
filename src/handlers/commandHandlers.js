@@ -4,6 +4,7 @@
 
 const { Markup } = require('telegraf');
 const { formatMessage, EMOJI } = require('../utils/messageFormatter');
+const { setUserAsAdmin } = require('../utils/userPermission');
 
 const MENU_BUTTONS = [
 	[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
@@ -67,9 +68,46 @@ async function handleHelp(ctx, isCommand = false) {
 	);
 }
 
+/**
+ * Xử lý khi user gõ lệnh /admin [mật khẩu]
+ */
+const handleAdminCommand = async (ctx) => {
+	try {
+		const adminPassword = 'admin123'; // Đặt mật khẩu admin tại đây
+
+		// Lấy tham số từ lệnh /admin
+		const params = ctx.message.text.split(' ').slice(1);
+
+		if (params.length === 0) {
+			await ctx.reply('❌ Vui lòng nhập mật khẩu admin.');
+			return;
+		}
+
+		const password = params[0];
+
+		if (password !== adminPassword) {
+			await ctx.reply('❌ Mật khẩu không đúng.');
+			return;
+		}
+
+		const telegramId = ctx.from.id.toString();
+		const success = await setUserAsAdmin(telegramId);
+
+		if (success) {
+			await ctx.reply('✅ Bạn đã được thiết lập thành admin thành công!');
+		} else {
+			await ctx.reply('❌ Có lỗi xảy ra khi thiết lập quyền admin.');
+		}
+	} catch (error) {
+		console.error('Lỗi xử lý lệnh admin:', error);
+		await ctx.reply('❌ Có lỗi xảy ra khi xử lý lệnh admin.');
+	}
+};
+
 module.exports = {
 	handleStartCommand: (ctx) => handleStart(ctx, true),
 	handleHelpCommand: (ctx) => handleHelp(ctx, true),
 	handleStartAction: (ctx) => handleStart(ctx, false),
 	handleHelpAction: (ctx) => handleHelp(ctx, false),
+	handleAdminCommand,
 };

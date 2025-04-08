@@ -12,8 +12,10 @@ const actionHandlers = require('./handlers/actionHandlers');
 const fileHandlers = require('./handlers/fileHandlers');
 const messageHandlers = require('./handlers/messageHandlers');
 
-// Import dịch vụ xử lý phụ đề
+// Import dịch vụ xử lý phụ đề và kết nối DB
 const { checkWhisperInstallation } = require('./services/subtitleProcessor');
+const { connectDB } = require('./utils/db');
+const { updateUserInfo } = require('./utils/userPermission');
 
 // Kiểm tra cấu hình
 if (!config.telegramToken || !config.openaiApiKey) {
@@ -26,6 +28,14 @@ const bot = new Telegraf(config.telegramToken);
 
 // Tạo thư mục uploads nếu chưa tồn tại
 fs.ensureDirSync(config.uploadPath);
+
+// Middleware để cập nhật thông tin người dùng
+bot.use(async (ctx, next) => {
+	if (ctx.from) {
+		await updateUserInfo(ctx);
+	}
+	return next();
+});
 
 // Xử lý lỗi
 bot.catch((err, ctx) => {
@@ -51,6 +61,7 @@ bot.catch((err, ctx) => {
 // Các lệnh cơ bản
 bot.start(commandHandlers.handleStartCommand);
 bot.help(commandHandlers.handleHelpCommand);
+bot.command('admin', commandHandlers.handleAdminCommand);
 
 // Xử lý các action
 const actionMap = {
@@ -77,6 +88,9 @@ bot.on(['document', 'video'], fileHandlers.handleFileUpload);
 // Khởi động bot
 async function startBot() {
 	try {
+		// Kết nối đến MongoDB
+		await connectDB();
+
 		await checkWhisperInstallation();
 		await bot.launch();
 		console.log('Bot đã khởi động thành công!');

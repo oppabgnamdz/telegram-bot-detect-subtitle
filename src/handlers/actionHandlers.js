@@ -14,30 +14,50 @@ const {
 	processLocalVideo,
 	processSubtitle,
 } = require('../services/subtitleProcessor');
+const {
+	checkUserPermission,
+	incrementUserCommand,
+} = require('../utils/userPermission');
 
 /**
  * Xử lý nút "Tạo phụ đề mới"
  * @param {object} ctx - Context Telegraf
  */
 async function handleCreateSubtitleAction(ctx) {
-	await ctx.answerCbQuery();
-	await ctx.reply(
-		formatMessage(
-			EMOJI.VIDEO,
-			'Nhập URL video hoặc gửi file',
-			'Vui lòng gửi một trong các loại sau:\n- URL video trực tiếp\n- URL YouTube\n- URL stream m3u8\n- Magnet link\n- Torrent file (.torrent)\n- Gửi file video\n- Gửi file phụ đề .srt'
-		),
-		{
-			parse_mode: 'HTML',
-			...Markup.inlineKeyboard([
-				[Markup.button.callback('Hủy', 'cancel_subtitle')],
-			]),
+	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.answerCbQuery(
+				'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay.'
+			);
+			await ctx.reply(
+				'🔒 Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+			);
+			return;
 		}
-	);
 
-	// Cập nhật trạng thái người dùng đang chờ nhập URL hoặc gửi file
-	const userId = ctx.from.id;
-	updateUserState(userId, 'waiting_for_url_or_file');
+		await ctx.answerCbQuery();
+		await ctx.reply(
+			formatMessage(
+				EMOJI.VIDEO,
+				'Nhập URL video hoặc gửi file',
+				'Vui lòng gửi một trong các loại sau:\n- URL video trực tiếp\n- URL YouTube\n- URL stream m3u8\n- Magnet link\n- Torrent file (.torrent)\n- Gửi file video\n- Gửi file phụ đề .srt'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+
+		// Cập nhật trạng thái người dùng đang chờ nhập URL hoặc gửi file
+		const userId = ctx.from.id;
+		updateUserState(userId, 'waiting_for_url_or_file');
+	} catch (error) {
+		// ... existing code ...
+	}
 }
 
 /**
@@ -228,6 +248,9 @@ async function handleOutputOption(ctx, option) {
 
 	// Đặt lại trạng thái
 	resetUserState(userId);
+
+	// Nếu xử lý thành công, tăng số lệnh đã dùng
+	await incrementUserCommand(ctx);
 }
 
 module.exports = {

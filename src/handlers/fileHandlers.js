@@ -9,6 +9,10 @@ const config = require('../config');
 const { formatMessage, EMOJI } = require('../utils/messageFormatter');
 const { getUserState, updateUserState } = require('../utils/userState');
 const { Markup } = require('telegraf');
+const {
+	checkUserPermission,
+	incrementUserCommand,
+} = require('../utils/userPermission');
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB trong byte
 
@@ -159,18 +163,27 @@ async function handleSuccessfulUpload(ctx, userId, filePath, fileExt) {
  * @param {object} ctx - Context Telegraf
  */
 async function handleFileUpload(ctx) {
-	const userId = ctx.from.id;
-	const userState = getUserState(userId);
-
-	if (
-		userState.state !== 'waiting_for_url_or_file' &&
-		userState.state !== 'idle'
-	) {
-		return;
-	}
-
-	let filePath;
 	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.reply(
+				'🔒 Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+			);
+			return;
+		}
+
+		const userId = ctx.from.id;
+		const userState = getUserState(userId);
+
+		if (
+			userState.state !== 'waiting_for_url_or_file' &&
+			userState.state !== 'idle'
+		) {
+			return;
+		}
+
+		let filePath;
 		const isDocument = !!ctx.message.document;
 		const fileId = isDocument
 			? ctx.message.document.file_id
@@ -196,6 +209,7 @@ async function handleFileUpload(ctx) {
 				filePath,
 				path.extname(safeFileName)
 			);
+			await incrementUserCommand(ctx);
 		}
 	} catch (error) {
 		console.error('Lỗi khi xử lý file:', error);

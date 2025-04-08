@@ -160,8 +160,8 @@ bot.action('create_subtitle', async (ctx) => {
 	await ctx.reply(
 		formatMessage(
 			EMOJI.VIDEO,
-			'Nhập URL video',
-			'Vui lòng gửi URL trực tiếp đến video (bắt đầu bằng http hoặc https).'
+			'Nhập URL video hoặc gửi file',
+			'Vui lòng gửi URL trực tiếp đến video (bắt đầu bằng http hoặc https) hoặc gửi file video hay file phụ đề (.srt).'
 		),
 		{
 			parse_mode: 'HTML',
@@ -170,12 +170,12 @@ bot.action('create_subtitle', async (ctx) => {
 			]),
 		}
 	);
-	// Lưu trạng thái người dùng đang chờ nhập URL
+	// Lưu trạng thái người dùng đang chờ nhập URL hoặc gửi file
 	const userId = ctx.from.id;
 	if (!userStates[userId]) {
 		userStates[userId] = {};
 	}
-	userStates[userId].state = 'waiting_for_url';
+	userStates[userId].state = 'waiting_for_url_or_file';
 });
 
 // Xử lý nút "Hủy" quá trình tạo phụ đề
@@ -295,6 +295,7 @@ bot.on('text', async (ctx) => {
 
 	// Xử lý theo trạng thái
 	switch (userStates[userId].state) {
+		case 'waiting_for_url_or_file':
 		case 'waiting_for_url':
 			// Người dùng đang nhập URL video
 			const videoUrl = ctx.message.text.trim();
@@ -304,7 +305,7 @@ bot.on('text', async (ctx) => {
 					formatMessage(
 						EMOJI.ERROR,
 						'URL không hợp lệ',
-						'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http hoặc https.'
+						'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http hoặc https hoặc gửi file trực tiếp.'
 					),
 					{
 						parse_mode: 'HTML',
@@ -374,6 +375,178 @@ bot.on('text', async (ctx) => {
 	}
 });
 
+// Xử lý file được gửi đến
+bot.on(['document', 'video'], async (ctx) => {
+	const userId = ctx.from.id;
+
+	// Khởi tạo trạng thái người dùng nếu chưa có
+	if (!userStates[userId]) {
+		userStates[userId] = { state: 'idle' };
+	}
+
+	// Chỉ xử lý file khi đang chờ URL/file hoặc người dùng đang ở trạng thái mặc định
+	if (
+		userStates[userId].state !== 'waiting_for_url_or_file' &&
+		userStates[userId].state !== 'idle'
+	) {
+		return;
+	}
+
+	try {
+		// Lấy thông tin file
+		const fileId = ctx.message.document
+			? ctx.message.document.file_id
+			: ctx.message.video.file_id;
+
+		const fileName = ctx.message.document
+			? ctx.message.document.file_name
+			: `video_${Date.now()}.mp4`;
+
+		// Kiểm tra kích thước file
+		const fileSize = ctx.message.document
+			? ctx.message.document.file_size
+			: ctx.message.video.file_size;
+
+		// Giới hạn Telegram là 20MB cho bot
+		const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB trong byte
+
+		if (fileSize > MAX_FILE_SIZE) {
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'File quá lớn',
+					`Telegram chỉ cho phép bot tải xuống file tối đa 20MB. File của bạn có kích thước ${(fileSize / (1024 * 1024)).toFixed(2)}MB. Vui lòng sử dụng URL trực tiếp đến video hoặc gửi file nhỏ hơn.`
+				),
+				{ parse_mode: 'HTML' }
+			);
+			return;
+		}
+
+		// Tạo tên file an toàn
+		const randomHash = crypto.randomBytes(8).toString('hex');
+		const fileExt =
+			path.extname(fileName) || (ctx.message.document ? '.txt' : '.mp4');
+		const safeFileName = `file_${randomHash}${fileExt}`;
+		const filePath = path.join(config.uploadPath, safeFileName);
+
+		// Thông báo đang tải file
+		const downloadMsg = await ctx.reply(
+			formatMessage(
+				EMOJI.DOWNLOAD,
+				'Đang tải file',
+				'Vui lòng đợi trong giây lát...'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		try {
+			// Tải file từ Telegram
+			const fileLink = await ctx.telegram.getFileLink(fileId);
+			const fileUrl = fileLink.href;
+
+			// Tải xuống file
+			const response = await fetch(fileUrl);
+
+			if (!response.ok) {
+				throw new Error(`Không thể tải file: ${response.statusText}`);
+			}
+
+			// Sử dụng arrayBuffer thay vì buffer (node-fetch v3+)
+			const arrayBuffer = await response.arrayBuffer();
+			const buffer = Buffer.from(arrayBuffer);
+
+			// Ghi file
+			await fs.writeFile(filePath, buffer);
+
+			await ctx.telegram.editMessageText(
+				ctx.chat.id,
+				downloadMsg.message_id,
+				null,
+				formatMessage(
+					EMOJI.SUCCESS,
+					'Đã tải xong file',
+					`Kích thước: ${(fs.statSync(filePath).size / (1024 * 1024)).toFixed(2)} MB`
+				),
+				{ parse_mode: 'HTML' }
+			);
+
+			// Nếu là file .srt thì chuyển sang trạng thái đợi prompt
+			if (fileExt.toLowerCase() === '.srt') {
+				userStates[userId].state = 'waiting_for_prompt';
+				userStates[userId].srtPath = filePath;
+
+				await ctx.reply(
+					formatMessage(
+						EMOJI.TRANSLATE,
+						'Đã nhận file phụ đề .srt',
+						'Vui lòng nhập nội dung hướng dẫn cách dịch phụ đề (ví dụ: "Dịch sang tiếng Việt, giữ nguyên nghĩa gốc").'
+					),
+					{
+						parse_mode: 'HTML',
+						...Markup.inlineKeyboard([
+							[
+								Markup.button.callback(
+									'Dùng prompt mặc định',
+									'default_prompt'
+								),
+							],
+							[Markup.button.callback('Hủy', 'cancel_subtitle')],
+						]),
+					}
+				);
+			} else {
+				// Nếu là file video thì xử lý như video URL
+				userStates[userId].state = 'waiting_for_prompt';
+				userStates[userId].videoPath = filePath;
+
+				await ctx.reply(
+					formatMessage(
+						EMOJI.TRANSLATE,
+						'Đã nhận file video',
+						'Vui lòng nhập nội dung hướng dẫn cách dịch phụ đề (ví dụ: "Dịch sang tiếng Việt, giữ nguyên nghĩa gốc").'
+					),
+					{
+						parse_mode: 'HTML',
+						...Markup.inlineKeyboard([
+							[
+								Markup.button.callback(
+									'Dùng prompt mặc định',
+									'default_prompt'
+								),
+							],
+							[Markup.button.callback('Hủy', 'cancel_subtitle')],
+						]),
+					}
+				);
+			}
+		} catch (downloadError) {
+			console.error('Lỗi tải file từ Telegram:', downloadError);
+			await ctx.telegram.editMessageText(
+				ctx.chat.id,
+				downloadMsg.message_id,
+				null,
+				formatMessage(
+					EMOJI.ERROR,
+					'Không thể tải file',
+					'Đã xảy ra lỗi khi tải file từ Telegram. Giới hạn tối đa là 20MB. Vui lòng thử lại với URL hoặc file nhỏ hơn.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+		}
+	} catch (error) {
+		console.error('Lỗi khi xử lý file:', error);
+		await ctx.reply(
+			formatMessage(
+				EMOJI.ERROR,
+				'Không thể tải file',
+				'Đã xảy ra lỗi khi xử lý file. Vui lòng thử lại sau hoặc sử dụng URL thay thế.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+		userStates[userId].state = 'idle';
+	}
+});
+
 // Xử lý nút "Dùng prompt mặc định"
 bot.action('default_prompt', async (ctx) => {
 	await ctx.answerCbQuery();
@@ -389,7 +562,9 @@ bot.action('default_prompt', async (ctx) => {
 
 	if (
 		userStates[userId].state === 'waiting_for_prompt' &&
-		userStates[userId].videoUrl
+		(userStates[userId].videoUrl ||
+			userStates[userId].videoPath ||
+			userStates[userId].srtPath)
 	) {
 		// Sử dụng prompt mặc định
 		const defaultPrompt =
@@ -397,25 +572,292 @@ bot.action('default_prompt', async (ctx) => {
 		userStates[userId].prompt = defaultPrompt;
 		userStates[userId].state = 'processing';
 
+		if (userStates[userId].srtPath) {
+			// Nếu là file SRT, chỉ cần dịch không cần trích xuất
+			const srtPath = userStates[userId].srtPath;
+			await processSrtFile(ctx, srtPath, defaultPrompt);
+		} else if (userStates[userId].videoPath) {
+			// Nếu là file video đã tải lên
+			await processLocalVideo(ctx, userStates[userId].videoPath, defaultPrompt);
+		} else {
+			// Nếu là URL video
+			await processSubtitle(ctx, userStates[userId].videoUrl, defaultPrompt);
+		}
+
+		// Đặt lại trạng thái
+		userStates[userId].state = 'idle';
+		delete userStates[userId].videoUrl;
+		delete userStates[userId].videoPath;
+		delete userStates[userId].srtPath;
+		delete userStates[userId].prompt;
+	} else {
+		ctx.reply(
+			formatMessage(EMOJI.ERROR, 'Lỗi', 'Vui lòng bắt đầu lại quá trình.'),
+			{ parse_mode: 'HTML' }
+		);
+	}
+});
+
+// Hàm xử lý file SRT đã tải lên
+async function processSrtFile(ctx, srtPath, prompt) {
+	try {
+		// Thông báo đang xử lý
 		await ctx.reply(
 			formatMessage(
-				EMOJI.TRANSLATE,
-				'Sử dụng prompt mặc định',
-				`Prompt: "${defaultPrompt}"`
+				EMOJI.LOADING,
+				'Đã nhận yêu cầu của bạn',
+				'Đang bắt đầu xử lý file SRT...'
 			),
 			{ parse_mode: 'HTML' }
 		);
 
-		await processSubtitle(
-			ctx,
-			userStates[userId].videoUrl,
-			userStates[userId].prompt
+		// Thông báo đang dịch phụ đề
+		const translateMsg = await ctx.reply(
+			formatMessage(
+				EMOJI.TRANSLATE,
+				'Đang dịch phụ đề',
+				'Đang sử dụng OpenAI để dịch phụ đề...'
+			),
+			{ parse_mode: 'HTML' }
 		);
 
-		// Đặt lại trạng thái
-		userStates[userId].state = 'idle';
+		const translatePromise = translateSubtitles(srtPath, prompt);
+		const translatedSrtPath = await pTimeout(
+			translatePromise,
+			BOT_TIMEOUT,
+			'Quá thời gian khi dịch phụ đề. Vui lòng thử lại sau.'
+		);
+
+		await ctx.telegram.editMessageText(
+			ctx.chat.id,
+			translateMsg.message_id,
+			null,
+			formatMessage(
+				EMOJI.SUCCESS,
+				'Đã dịch phụ đề thành công!',
+				'Phụ đề đã được dịch theo yêu cầu của bạn.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		// Gửi file phụ đề gốc
+		await ctx.replyWithDocument(
+			{
+				source: srtPath,
+				filename: path.basename(srtPath),
+			},
+			{
+				caption: `${EMOJI.SUBTITLE} Phụ đề gốc`,
+				parse_mode: 'HTML',
+			}
+		);
+
+		// Gửi file phụ đề đã dịch
+		await ctx.replyWithDocument(
+			{
+				source: translatedSrtPath,
+				filename: path.basename(translatedSrtPath),
+			},
+			{
+				caption: `${EMOJI.TRANSLATE} Phụ đề tiếng Việt`,
+				parse_mode: 'HTML',
+			}
+		);
+
+		// Thông báo hoàn thành
+		await ctx.reply(
+			formatMessage(
+				EMOJI.SUCCESS,
+				'Quá trình dịch phụ đề đã hoàn tất!',
+				'Bạn có thể bắt đầu tạo phụ đề mới.'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
+					[Markup.button.callback('Quay lại menu chính', 'start')],
+				]),
+			}
+		);
+	} catch (error) {
+		console.error('Error processing SRT file:', error);
+		await ctx.reply(
+			formatMessage(
+				EMOJI.ERROR,
+				'Lỗi khi xử lý file SRT',
+				'Đã xảy ra lỗi khi xử lý file SRT. Vui lòng thử lại sau.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+	} finally {
+		// Xóa các file tạm sau khi hoàn tất
+		setTimeout(async () => {
+			try {
+				if (srtPath && fs.existsSync(srtPath)) await fs.unlink(srtPath);
+				console.log('Đã xóa file SRT tạm');
+			} catch (error) {
+				console.error('Error cleaning up temporary files:', error);
+			}
+		}, 60000); // Xóa sau 1 phút
 	}
-});
+}
+
+// Hàm xử lý video đã tải lên
+async function processLocalVideo(ctx, videoPath, prompt) {
+	let srtPath, translatedSrtPath;
+
+	try {
+		// Kiểm tra whisper
+		const whisperPromise = checkWhisperInstallation();
+		const whisperInstalled = await pTimeout(
+			whisperPromise,
+			BOT_TIMEOUT,
+			'Quá thời gian khi kiểm tra cài đặt Whisper'
+		);
+
+		if (!whisperInstalled) {
+			return ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Lỗi cài đặt',
+					'Whisper chưa được cài đặt hoặc không có trong PATH. Vui lòng liên hệ quản trị viên.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+		}
+
+		// Thông báo bắt đầu quá trình
+		await ctx.reply(
+			formatMessage(
+				EMOJI.LOADING,
+				'Đã nhận yêu cầu của bạn',
+				'Đang bắt đầu xử lý video đã tải lên...'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		// Thông báo đang trích xuất phụ đề
+		const whisperMsg = await ctx.reply(
+			formatMessage(
+				EMOJI.SUBTITLE,
+				'Đang trích xuất phụ đề',
+				`Đang sử dụng Whisper (model: ${config.whisperModel})...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		const extractPromise = extractSubtitles(videoPath);
+		srtPath = await pTimeout(
+			extractPromise,
+			BOT_TIMEOUT,
+			'Quá thời gian khi trích xuất phụ đề. Vui lòng thử với video ngắn hơn.'
+		);
+
+		await ctx.telegram.editMessageText(
+			ctx.chat.id,
+			whisperMsg.message_id,
+			null,
+			formatMessage(
+				EMOJI.SUCCESS,
+				'Đã trích xuất phụ đề thành công!',
+				'Đã nhận dạng đầy đủ nội dung âm thanh của video.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		// Thông báo đang dịch phụ đề
+		const translateMsg = await ctx.reply(
+			formatMessage(
+				EMOJI.TRANSLATE,
+				'Đang dịch phụ đề',
+				'Đang sử dụng OpenAI để dịch phụ đề...'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		const translatePromise = translateSubtitles(srtPath, prompt);
+		translatedSrtPath = await pTimeout(
+			translatePromise,
+			BOT_TIMEOUT,
+			'Quá thời gian khi dịch phụ đề. Vui lòng thử lại sau.'
+		);
+
+		await ctx.telegram.editMessageText(
+			ctx.chat.id,
+			translateMsg.message_id,
+			null,
+			formatMessage(
+				EMOJI.SUCCESS,
+				'Đã dịch phụ đề thành công!',
+				'Phụ đề đã được dịch theo yêu cầu của bạn.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		// Gửi file phụ đề gốc
+		await ctx.replyWithDocument(
+			{
+				source: srtPath,
+				filename: path.basename(srtPath),
+			},
+			{
+				caption: `${EMOJI.SUBTITLE} Phụ đề gốc`,
+				parse_mode: 'HTML',
+			}
+		);
+
+		// Gửi file phụ đề đã dịch
+		await ctx.replyWithDocument(
+			{
+				source: translatedSrtPath,
+				filename: path.basename(translatedSrtPath),
+			},
+			{
+				caption: `${EMOJI.TRANSLATE} Phụ đề tiếng Việt`,
+				parse_mode: 'HTML',
+			}
+		);
+
+		// Thông báo hoàn thành
+		await ctx.reply(
+			formatMessage(
+				EMOJI.SUCCESS,
+				'Quá trình tạo phụ đề đã hoàn tất!',
+				'Bạn có thể bắt đầu tạo phụ đề mới.'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
+					[Markup.button.callback('Quay lại menu chính', 'start')],
+				]),
+			}
+		);
+	} catch (error) {
+		console.error('Error processing local video:', error);
+		await ctx.reply(
+			formatMessage(
+				EMOJI.ERROR,
+				'Lỗi khi xử lý video',
+				'Đã xảy ra lỗi khi xử lý video. Vui lòng thử lại sau.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+	} finally {
+		// Xóa các file tạm sau khi hoàn tất
+		setTimeout(async () => {
+			try {
+				if (videoPath && fs.existsSync(videoPath)) await fs.unlink(videoPath);
+				if (srtPath && fs.existsSync(srtPath)) await fs.unlink(srtPath);
+				if (translatedSrtPath && fs.existsSync(translatedSrtPath))
+					await fs.unlink(translatedSrtPath);
+				console.log('Đã xóa các file tạm');
+			} catch (error) {
+				console.error('Error cleaning up temporary files:', error);
+			}
+		}, 60000); // Xóa sau 1 phút
+	}
+}
 
 // Hàm xử lý tạo phụ đề
 async function processSubtitle(ctx, videoUrl, prompt) {

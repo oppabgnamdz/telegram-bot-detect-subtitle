@@ -20,6 +20,12 @@ const {
 // Cấu hình
 const TRANSLATION_TIMEOUT = 600000; // 10 phút (600,000 ms)
 
+// Giá tiền cho model GPT-3.5-turbo (USD/1000 token)
+const GPT35_PRICING = {
+	input: 0.0015, // $0.0015 / 1000 token đầu vào
+	output: 0.002, // $0.002 / 1000 token đầu ra
+};
+
 // Khởi tạo OpenAI client
 const openai = new OpenAI({
 	apiKey: config.openaiApiKey,
@@ -36,6 +42,12 @@ const openai = new OpenAI({
 async function translateSubtitles(srtPath, prompt, chatId, bot) {
 	const sessionId = uuidv4().slice(0, 8); // Tạo ID session để theo dõi
 	console.log(`[${sessionId}] Bắt đầu xử lý file: ${srtPath}`);
+
+	// Biến theo dõi chi phí
+	let totalTokens = {
+		input: 0,
+		output: 0,
+	};
 
 	// Gửi thông báo bắt đầu cho người dùng
 	if (chatId && bot) {
@@ -179,6 +191,15 @@ async function translateSubtitles(srtPath, prompt, chatId, bot) {
 				const response = await withRetry(apiCallFn);
 				const translatedText = response.choices[0].message.content.trim();
 
+				// Cập nhật số token sử dụng
+				if (response.usage) {
+					totalTokens.input += response.usage.prompt_tokens;
+					totalTokens.output += response.usage.completion_tokens;
+					console.log(
+						`[${sessionId}] Batch ${batchIndex + 1} sử dụng: ${response.usage.prompt_tokens} input tokens, ${response.usage.completion_tokens} output tokens`
+					);
+				}
+
 				// Phân tích kết quả dịch
 				const translatedSubtitles = parseTranslatedResponse(
 					translatedText,
@@ -223,6 +244,12 @@ async function translateSubtitles(srtPath, prompt, chatId, bot) {
 
 		console.timeEnd(`[${sessionId}] Dịch phụ đề`);
 
+		// Tính chi phí dịch thuật
+		const costInUSD = calculateCost(totalTokens);
+		console.log(
+			`[${sessionId}] Chi phí dịch thuật: $${costInUSD.toFixed(4)} (${totalTokens.input} input tokens, ${totalTokens.output} output tokens)`
+		);
+
 		// Thông báo đã dịch xong
 		if (chatId && bot) {
 			await bot.telegram.sendMessage(
@@ -255,11 +282,16 @@ async function translateSubtitles(srtPath, prompt, chatId, bot) {
 		);
 		console.timeEnd(`[${sessionId}] Thời gian tổng cộng`);
 
-		// Thông báo hoàn thành cho người dùng
+		// Thông báo hoàn thành và chi phí cho người dùng
 		if (chatId && bot) {
 			await bot.telegram.sendMessage(
 				chatId,
-				`✅ Đã dịch xong và lưu file: ${fileName}.vi.srt\nTổng số phụ đề: ${translatedSubtitles.length}`
+				`✅ Đã dịch xong và lưu file: ${fileName}.vi.srt
+Tổng số phụ đề: ${translatedSubtitles.length}
+📊 Thống kê chi phí:
+• Tokens đầu vào: ${totalTokens.input.toLocaleString()}
+• Tokens đầu ra: ${totalTokens.output.toLocaleString()}
+• Chi phí: $${costInUSD.toFixed(4)} USD`
 			);
 		}
 
@@ -278,6 +310,17 @@ async function translateSubtitles(srtPath, prompt, chatId, bot) {
 
 		throw error;
 	}
+}
+
+/**
+ * Tính chi phí dịch dựa trên lượng token sử dụng
+ * @param {Object} tokens - Object chứa số lượng token đầu vào và đầu ra
+ * @returns {number} - Chi phí tính bằng USD
+ */
+function calculateCost(tokens) {
+	const inputCost = (tokens.input / 1000) * GPT35_PRICING.input;
+	const outputCost = (tokens.output / 1000) * GPT35_PRICING.output;
+	return inputCost + outputCost;
 }
 
 module.exports = {

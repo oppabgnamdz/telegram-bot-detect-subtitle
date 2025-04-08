@@ -189,12 +189,6 @@ async function withRetry(
 }
 
 /**
- * Tạo prompt dịch cho một batch phụ đề
- * @param {Array<{id: string, time: string, text: string}>} batch - Batch phụ đề cần dịch
- * @param {string} customPrompt - Prompt tùy chỉnh từ người dùng
- * @returns {string} - Prompt hoàn chỉnh
- */
-/**
  * Tạo các batch thông minh để duy trì ngữ cảnh giữa các phụ đề
  * @param {Array<{id: string, time: string, text: string}>} subtitles - Tất cả phụ đề
  * @param {number} maxBatchSize - Kích thước tối đa của mỗi batch
@@ -413,11 +407,18 @@ function parseTranslatedResponse(translatedText, batch) {
  * Dịch phụ đề sang tiếng Việt sử dụng OpenAI API - phiên bản cải tiến
  * @param {string} srtPath - Đường dẫn đến file SRT gốc
  * @param {string} prompt - Câu lệnh prompt để dịch
+ * @param {number|string} chatId - ID chat Telegram để gửi thông báo
+ * @param {object} bot - Instance của Telegram bot
  * @returns {Promise<string>} - Đường dẫn đến file SRT đã dịch
  */
-async function translateSubtitles(srtPath, prompt) {
+async function translateSubtitles(srtPath, prompt, chatId, bot) {
 	const sessionId = uuidv4().slice(0, 8); // Tạo ID session để theo dõi
 	console.log(`[${sessionId}] Bắt đầu xử lý file: ${srtPath}`);
+
+	// Gửi thông báo bắt đầu cho người dùng
+	if (chatId && bot) {
+		await bot.telegram.sendMessage(chatId, `🔄 Bắt đầu xử lý file phụ đề...`);
+	}
 
 	try {
 		console.time(`[${sessionId}] Thời gian tổng cộng`);
@@ -433,6 +434,14 @@ async function translateSubtitles(srtPath, prompt) {
 
 		console.log(`[${sessionId}] Tổng số phụ đề: ${subtitles.length}`);
 
+		// Gửi thông báo đã đọc file
+		if (chatId && bot) {
+			await bot.telegram.sendMessage(
+				chatId,
+				`📑 Đã đọc file phụ đề với ${subtitles.length} dòng phụ đề`
+			);
+		}
+
 		// Kiểm tra xem file đã là tiếng Việt chưa
 		console.time(`[${sessionId}] Kiểm tra ngôn ngữ`);
 		const alreadyVietnamese = isVietnamese(subtitles);
@@ -441,13 +450,38 @@ async function translateSubtitles(srtPath, prompt) {
 		if (alreadyVietnamese) {
 			console.log(`[${sessionId}] File đã là tiếng Việt, không cần dịch lại`);
 
+			// Thông báo về việc file đã là tiếng Việt
+			if (chatId && bot) {
+				await bot.telegram.sendMessage(
+					chatId,
+					`🇻🇳 File phụ đề đã là tiếng Việt, không cần dịch lại`
+				);
+			}
+
 			// Vẫn lưu file với đuôi .vi.srt để đảm bảo tính nhất quán
 			const fileName = path.basename(srtPath, '.srt');
 			const translatedPath = path.join(config.uploadPath, `${fileName}.vi.srt`);
 			await fs.writeFile(translatedPath, srtContent, 'utf-8');
 
 			console.timeEnd(`[${sessionId}] Thời gian tổng cộng`);
+
+			// Thông báo hoàn thành
+			if (chatId && bot) {
+				await bot.telegram.sendMessage(
+					chatId,
+					`✅ Đã hoàn thành và lưu file: ${fileName}.vi.srt`
+				);
+			}
+
 			return translatedPath;
+		}
+
+		// Thông báo bắt đầu quá trình dịch
+		if (chatId && bot) {
+			await bot.telegram.sendMessage(
+				chatId,
+				`🔍 Đã phát hiện file phụ đề không phải tiếng Việt, bắt đầu dịch...`
+			);
 		}
 
 		// Chia thành các batch để dịch với chiến lược thông minh
@@ -458,6 +492,14 @@ async function translateSubtitles(srtPath, prompt) {
 			`[${sessionId}] Chia thành ${batches.length} batch(es) để dịch với chiến lược bảo toàn ngữ cảnh`
 		);
 
+		// Thông báo về số batch
+		if (chatId && bot) {
+			await bot.telegram.sendMessage(
+				chatId,
+				`📊 Chia thành ${batches.length} phần để dịch, mỗi phần có khoảng ${BATCH_SIZE} phụ đề`
+			);
+		}
+
 		const translatedBatches = [];
 
 		// Dịch từng batch
@@ -466,6 +508,18 @@ async function translateSubtitles(srtPath, prompt) {
 			console.log(
 				`[${sessionId}] Đang dịch batch ${batchIndex + 1}/${batches.length} (${batch.length} phụ đề)`
 			);
+
+			// Gửi thông báo tiến độ dịch
+			if (chatId && bot && batches.length > 1) {
+				// Chỉ gửi thông báo tiến độ nếu có nhiều batch
+				const progressPercent = Math.round(
+					((batchIndex + 1) / batches.length) * 100
+				);
+				await bot.telegram.sendMessage(
+					chatId,
+					`🔄 Đang dịch phần ${batchIndex + 1}/${batches.length} (${progressPercent}%)`
+				);
+			}
 
 			// Lấy ngữ cảnh từ batch trước đó (nếu có)
 			const previousBatch = batchIndex > 0 ? batches[batchIndex - 1] : [];
@@ -520,6 +574,14 @@ async function translateSubtitles(srtPath, prompt) {
 					error
 				);
 
+				// Thông báo lỗi cho người dùng
+				if (chatId && bot) {
+					await bot.telegram.sendMessage(
+						chatId,
+						`⚠️ Gặp lỗi khi dịch phần ${batchIndex + 1}/${batches.length}. Giữ nguyên phụ đề gốc cho phần này.`
+					);
+				}
+
 				// Trong trường hợp lỗi, giữ nguyên phụ đề gốc cho batch này
 				console.log(
 					`[${sessionId}] Giữ nguyên phụ đề gốc cho batch ${batchIndex + 1}`
@@ -538,6 +600,14 @@ async function translateSubtitles(srtPath, prompt) {
 		}
 
 		console.timeEnd(`[${sessionId}] Dịch phụ đề`);
+
+		// Thông báo đã dịch xong
+		if (chatId && bot) {
+			await bot.telegram.sendMessage(
+				chatId,
+				`📝 Đã dịch xong toàn bộ phụ đề, đang lưu kết quả...`
+			);
+		}
 
 		// Kết hợp tất cả các batch đã dịch
 		const translatedSubtitles = translatedBatches.flat();
@@ -563,10 +633,27 @@ async function translateSubtitles(srtPath, prompt) {
 		);
 		console.timeEnd(`[${sessionId}] Thời gian tổng cộng`);
 
+		// Thông báo hoàn thành cho người dùng
+		if (chatId && bot) {
+			await bot.telegram.sendMessage(
+				chatId,
+				`✅ Đã dịch xong và lưu file: ${fileName}.vi.srt\nTổng số phụ đề: ${translatedSubtitles.length}`
+			);
+		}
+
 		return translatedPath;
 	} catch (error) {
 		console.error(`[${sessionId}] Lỗi nghiêm trọng khi dịch phụ đề:`, error);
 		console.timeEnd(`[${sessionId}] Thời gian tổng cộng`);
+
+		// Gửi thông báo lỗi
+		if (chatId && bot) {
+			await bot.telegram.sendMessage(
+				chatId,
+				`❌ Gặp lỗi nghiêm trọng khi xử lý file phụ đề: ${error.message || 'Lỗi không xác định'}`
+			);
+		}
+
 		throw error;
 	}
 }

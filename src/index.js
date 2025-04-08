@@ -621,7 +621,12 @@ async function processSrtFile(ctx, srtPath, prompt) {
 			{ parse_mode: 'HTML' }
 		);
 
-		const translatePromise = translateSubtitles(srtPath, prompt);
+		const translatePromise = translateSubtitles(
+			srtPath,
+			prompt,
+			ctx.chat.id,
+			bot
+		);
 		const translatedSrtPath = await pTimeout(
 			translatePromise,
 			BOT_TIMEOUT,
@@ -775,7 +780,12 @@ async function processLocalVideo(ctx, videoPath, prompt) {
 			{ parse_mode: 'HTML' }
 		);
 
-		const translatePromise = translateSubtitles(srtPath, prompt);
+		const translatePromise = translateSubtitles(
+			srtPath,
+			prompt,
+			ctx.chat.id,
+			bot
+		);
 		translatedSrtPath = await pTimeout(
 			translatePromise,
 			BOT_TIMEOUT,
@@ -966,7 +976,12 @@ async function processSubtitle(ctx, videoUrl, prompt) {
 			{ parse_mode: 'HTML' }
 		);
 
-		const translatePromise = translateSubtitles(srtPath, prompt);
+		const translatePromise = translateSubtitles(
+			srtPath,
+			prompt,
+			ctx.chat.id,
+			bot
+		);
 		translatedSrtPath = await pTimeout(
 			translatePromise,
 			BOT_TIMEOUT,

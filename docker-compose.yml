@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  telegram-bot:
+    build: .
+    container_name: telegram-subtitle-bot
+    restart: always
+    volumes:
+      - ./uploads:/app/uploads
+      - ./.env:/app/.env
+    environment:
+      - TZ=Asia/Ho_Chi_Minh

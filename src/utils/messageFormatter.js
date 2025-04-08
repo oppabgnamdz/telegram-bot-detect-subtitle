@@ -16,6 +16,7 @@ const EMOJI = {
 	FILE: '📁',
 	OPTIONS: '🔢',
 	INFO: 'ℹ️',
+	UPLOAD: '🔄',
 };
 
 // Định nghĩa các tùy chọn xuất kết quả

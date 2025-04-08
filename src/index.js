@@ -3,7 +3,13 @@ const path = require('path');
 const fs = require('fs-extra');
 const crypto = require('crypto');
 const config = require('./config');
-const { downloadVideo } = require('./utils/downloader');
+const {
+	downloadVideo,
+	isM3U8Url,
+	isYouTubeUrl,
+	isMagnetUrl,
+	isTorrentUrl,
+} = require('./utils/downloader');
 const { extractSubtitles } = require('./services/whisperService');
 const { translateSubtitles } = require('./services/translationService');
 const pTimeout = require('p-timeout');
@@ -161,7 +167,7 @@ bot.action('create_subtitle', async (ctx) => {
 		formatMessage(
 			EMOJI.VIDEO,
 			'Nhập URL video hoặc gửi file',
-			'Vui lòng gửi URL trực tiếp đến video (bắt đầu bằng http hoặc https) hoặc gửi file video hay file phụ đề (.srt).'
+			'Vui lòng gửi một trong các loại sau:\n- URL video trực tiếp\n- URL YouTube\n- URL stream m3u8\n- Magnet link\n- Torrent file (.torrent)\n- Gửi file video\n- Gửi file phụ đề .srt'
 		),
 		{
 			parse_mode: 'HTML',
@@ -205,7 +211,14 @@ bot.action('help', async (ctx) => {
 			'Hướng dẫn sử dụng Bot Phụ Đề Tự Động',
 			`Các bước để tạo phụ đề tự động:\n
 1. Nhấn nút <b>Tạo phụ đề mới</b>
-2. Nhập URL video (phải là URL trực tiếp)
+2. Nhập URL video. Bot hỗ trợ:
+   • URL video trực tiếp (.mp4, .webm, ...)
+   • YouTube (youtube.com, youtu.be)
+   • Stream HLS (m3u8)
+   • Magnet link (magnet:...)
+   • Torrent file (.torrent)
+   • File video
+   • File phụ đề .srt
 3. Nhập prompt dịch (mô tả cách bạn muốn dịch phụ đề)
 4. Đợi bot xử lý và tải về phụ đề`
 		),
@@ -242,7 +255,7 @@ bot.command('subtitle', async (ctx) => {
 			formatMessage(
 				EMOJI.ERROR,
 				'URL không hợp lệ',
-				'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http hoặc https.'
+				'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http hoặc https. Bot hỗ trợ URL video trực tiếp, YouTube và stream m3u8.'
 			),
 			{ parse_mode: 'HTML' }
 		);
@@ -300,12 +313,13 @@ bot.on('text', async (ctx) => {
 			// Người dùng đang nhập URL video
 			const videoUrl = ctx.message.text.trim();
 
-			if (!videoUrl.startsWith('http')) {
+			// Kiểm tra các loại URL khác nhau
+			if (!videoUrl.startsWith('http') && !videoUrl.startsWith('magnet:')) {
 				ctx.reply(
 					formatMessage(
 						EMOJI.ERROR,
 						'URL không hợp lệ',
-						'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http hoặc https hoặc gửi file trực tiếp.'
+						'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http, https hoặc magnet:. Bot hỗ trợ URL video trực tiếp, YouTube, stream m3u8, magnet link và file torrent.'
 					),
 					{
 						parse_mode: 'HTML',
@@ -321,11 +335,27 @@ bot.on('text', async (ctx) => {
 			userStates[userId].videoUrl = videoUrl;
 			userStates[userId].state = 'waiting_for_prompt';
 
+			// Hiển thị thông tin về loại URL đã phát hiện
+			let urlTypeInfo = '';
+			if (isYouTubeUrl(videoUrl)) {
+				urlTypeInfo =
+					'Đã phát hiện URL YouTube. Bot sẽ tự động xử lý video YouTube.';
+			} else if (isM3U8Url(videoUrl)) {
+				urlTypeInfo =
+					'Đã phát hiện URL HLS (m3u8). Bot sẽ tự động xử lý stream HLS.';
+			} else if (isMagnetUrl(videoUrl)) {
+				urlTypeInfo =
+					'Đã phát hiện Magnet link. Bot sẽ tự động tải video từ nguồn P2P.';
+			} else if (isTorrentUrl(videoUrl)) {
+				urlTypeInfo =
+					'Đã phát hiện Torrent URL. Bot sẽ tự động tải video từ torrent.';
+			}
+
 			ctx.reply(
 				formatMessage(
 					EMOJI.TRANSLATE,
 					'Nhập prompt dịch',
-					'Vui lòng nhập nội dung hướng dẫn cách dịch phụ đề (ví dụ: "Dịch sang tiếng Việt, giữ nguyên nghĩa gốc").'
+					`${urlTypeInfo ? urlTypeInfo + '\n\n' : ''}Vui lòng nhập nội dung hướng dẫn cách dịch phụ đề (ví dụ: "Dịch sang tiếng Việt, giữ nguyên nghĩa gốc").`
 				),
 				{
 					parse_mode: 'HTML',

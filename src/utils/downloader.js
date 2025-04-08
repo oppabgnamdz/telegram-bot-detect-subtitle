@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const { exec } = require('child_process');
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const pTimeout = require('p-timeout');
+// Thêm thư viện WebTorrent để xử lý torrent và magnet
+const WebTorrent = require('webtorrent');
 // Không sử dụng thư viện m3u8-downloader vì gây lỗi
 // const M3U8Downloader = require('m3u8-downloader');
 
@@ -62,6 +64,38 @@ function isM3U8Url(url) {
 	}
 
 	return false;
+}
+
+/**
+ * Kiểm tra xem URL có phải là YouTube hay không
+ * @param {string} url - URL cần kiểm tra
+ * @returns {boolean} - true nếu là YouTube, false nếu không phải
+ */
+function isYouTubeUrl(url) {
+	// Các domain YouTube thông dụng
+	return (
+		url.includes('youtube.com') ||
+		url.includes('youtu.be') ||
+		url.includes('youtube-nocookie.com')
+	);
+}
+
+/**
+ * Kiểm tra xem URL có phải là Magnet link không
+ * @param {string} url - URL cần kiểm tra
+ * @returns {boolean} - true nếu là Magnet link, false nếu không phải
+ */
+function isMagnetUrl(url) {
+	return url.toLowerCase().startsWith('magnet:');
+}
+
+/**
+ * Kiểm tra xem URL có phải là Torrent file không
+ * @param {string} url - URL cần kiểm tra
+ * @returns {boolean} - true nếu là Torrent file, false nếu không phải
+ */
+function isTorrentUrl(url) {
+	return url.toLowerCase().endsWith('.torrent');
 }
 
 /**
@@ -765,10 +799,192 @@ async function downloadWithYtDlpCommand(url, outputPath) {
 }
 
 /**
- * Tải video từ URL với timeout và retry
- * @param {string} url - URL của video cần tải
- * @param {string} fileName - Tên file để lưu
- * @param {number} maxRetries - Số lần thử lại tối đa
+ * Tải video từ YouTube
+ * @param {string} url - URL YouTube cần tải
+ * @param {string} outputPath - Đường dẫn lưu file video
+ * @returns {Promise<string>} - Đường dẫn đến file đã tải
+ */
+async function downloadYouTubeVideo(url, outputPath) {
+	console.log(`Đang tải video YouTube từ ${url} vào ${outputPath}`);
+
+	// Kiểm tra và cài đặt yt-dlp nếu cần
+	await ensureYtDlpInstalled();
+
+	// Ưu tiên sử dụng yt-dlp-wrap nếu khởi tạo thành công
+	if (ytDlp) {
+		try {
+			console.log('Đang tải YouTube video sử dụng yt-dlp-wrap...');
+
+			// Thiết lập tùy chọn tối ưu cho YouTube
+			const ytDlpOptions = [
+				'--no-playlist',
+				'--merge-output-format',
+				'mp4',
+				'--no-check-certificate',
+				'--prefer-ffmpeg',
+				'--format',
+				'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+				'--output',
+				outputPath,
+				'--progress',
+			];
+
+			// Thực hiện tải bằng yt-dlp-wrap
+			const ytDlpPromise = new Promise((resolve, reject) => {
+				ytDlp
+					.execPromise([url, ...ytDlpOptions])
+					.then(() => {
+						console.log(`Tải thành công video YouTube vào ${outputPath}`);
+						resolve(outputPath);
+					})
+					.catch((error) => {
+						console.error('Lỗi khi tải từ YouTube sử dụng yt-dlp-wrap:', error);
+						reject(error);
+					});
+			});
+
+			return await pTimeout(
+				ytDlpPromise,
+				PROMISE_TIMEOUT,
+				`Quá thời gian (${PROMISE_TIMEOUT / 1000} giây) khi tải YouTube video`
+			);
+		} catch (error) {
+			console.error('Lỗi khi tải YouTube video với yt-dlp-wrap:', error);
+			console.log('Chuyển sang sử dụng phương pháp thay thế...');
+			// Nếu thất bại, sử dụng phương pháp trực tiếp
+			return await downloadWithYtDlpCommand(url, outputPath);
+		}
+	} else {
+		// Nếu không khởi tạo được yt-dlp-wrap, sử dụng lệnh trực tiếp
+		return await downloadWithYtDlpCommand(url, outputPath);
+	}
+}
+
+/**
+ * Tải video từ Torrent file hoặc Magnet link
+ * @param {string} torrentId - Torrent URL hoặc Magnet link
+ * @param {string} outputPath - Đường dẫn lưu file video
+ * @returns {Promise<string>} - Đường dẫn đến file đã tải
+ */
+async function downloadTorrent(torrentId, outputPath) {
+	console.log(`Đang tải video từ torrent/magnet: ${torrentId}`);
+
+	// Tạo thư mục đích nếu chưa tồn tại
+	const outputDir = path.dirname(outputPath);
+	await fs.ensureDir(outputDir);
+
+	try {
+		// Sử dụng dynamic import thay vì require
+		const WebTorrent = (await import('webtorrent')).default;
+
+		// Khởi tạo client WebTorrent
+		const client = new WebTorrent();
+
+		return new Promise((resolve, reject) => {
+			client.add(torrentId, { path: outputDir }, (torrent) => {
+				console.log(`Đã tìm thấy torrent: ${torrent.name}`);
+				console.log(
+					`Tổng kích thước: ${(torrent.length / (1024 * 1024)).toFixed(2)} MB`
+				);
+
+				// Tìm file video lớn nhất trong torrent
+				let largestFile = null;
+				let largestSize = 0;
+
+				torrent.files.forEach((file) => {
+					const fileExt = path.extname(file.name).toLowerCase();
+					const videoExts = [
+						'.mp4',
+						'.mkv',
+						'.avi',
+						'.mov',
+						'.webm',
+						'.flv',
+						'.wmv',
+						'.m4v',
+					];
+
+					// Ưu tiên file video, nếu không có thì lấy file lớn nhất
+					if (videoExts.includes(fileExt) && file.length > largestSize) {
+						largestFile = file;
+						largestSize = file.length;
+					} else if (!largestFile && file.length > largestSize) {
+						largestFile = file;
+						largestSize = file.length;
+					}
+				});
+
+				if (!largestFile) {
+					client.destroy();
+					return reject(new Error('Không tìm thấy file video trong torrent'));
+				}
+
+				// Báo cáo tiến độ tải
+				torrent.on('download', (bytes) => {
+					const progress = (torrent.progress * 100).toFixed(1);
+					const downloadSpeed = (torrent.downloadSpeed / (1024 * 1024)).toFixed(
+						2
+					);
+					console.log(`Tiến độ: ${progress}% - Tốc độ: ${downloadSpeed} MB/s`);
+				});
+
+				// Khi tải xong, lưu file vào outputPath
+				torrent.on('done', () => {
+					console.log('Đã tải xong torrent!');
+
+					// Tạo symlink hoặc copy file vào outputPath
+					const filePath = path.join(torrent.path, largestFile.path);
+
+					// Sử dụng tên file gốc từ torrent
+					const finalOutputPath = outputPath;
+
+					// Copy file nếu đường dẫn khác nhau
+					if (filePath !== finalOutputPath) {
+						fs.copyFile(filePath, finalOutputPath)
+							.then(() => {
+								console.log(
+									`Đã copy file từ ${filePath} đến ${finalOutputPath}`
+								);
+								client.destroy();
+								resolve(finalOutputPath);
+							})
+							.catch((err) => {
+								console.error('Lỗi khi copy file:', err);
+								client.destroy();
+								reject(err);
+							});
+					} else {
+						client.destroy();
+						resolve(finalOutputPath);
+					}
+				});
+
+				// Xử lý lỗi
+				torrent.on('error', (err) => {
+					console.error('Lỗi torrent:', err);
+					client.destroy();
+					reject(err);
+				});
+			});
+
+			// Xử lý lỗi client
+			client.on('error', (err) => {
+				console.error('Lỗi WebTorrent client:', err);
+				client.destroy();
+				reject(err);
+			});
+		});
+	} catch (error) {
+		console.error('Lỗi khi tải WebTorrent module:', error);
+		throw new Error(`Không thể tải module WebTorrent: ${error.message}`);
+	}
+}
+
+/**
+ * Tải video từ URL
+ * @param {string} url - URL của video
+ * @param {string} fileName - Tên file (không sử dụng)
+ * @param {number} maxRetries - Số lần thử tối đa
  * @returns {Promise<string>} - Đường dẫn đến file đã tải
  */
 async function downloadVideo(url, fileName, maxRetries = 3) {
@@ -782,9 +998,23 @@ async function downloadVideo(url, fileName, maxRetries = 3) {
 			const safeFileName = generateSafeFileName(url);
 			const filePath = path.join(config.uploadPath, safeFileName);
 
-			// Kiểm tra nếu là URL m3u8 thì sử dụng phương thức tải m3u8
-			if (isM3U8Url(url)) {
-				// Bọc với timeout dài hơn - sử dụng cú pháp đúng cho p-timeout 4.1.0
+			// Kiểm tra loại URL để sử dụng phương thức tải phù hợp
+			if (isMagnetUrl(url) || isTorrentUrl(url)) {
+				// Nếu là magnet link hoặc torrent file, sử dụng phương thức tải torrent
+				return await pTimeout(
+					downloadTorrent(url, filePath),
+					PROMISE_TIMEOUT * 2, // Tăng timeout cho torrent
+					`Quá thời gian (${(PROMISE_TIMEOUT * 2) / 1000} giây) khi tải torrent`
+				);
+			} else if (isYouTubeUrl(url)) {
+				// Nếu là YouTube, sử dụng phương thức tải YouTube
+				return await pTimeout(
+					downloadYouTubeVideo(url, filePath),
+					PROMISE_TIMEOUT,
+					`Quá thời gian (${PROMISE_TIMEOUT / 1000} giây) khi tải video YouTube`
+				);
+			} else if (isM3U8Url(url)) {
+				// Nếu là m3u8, sử dụng phương thức tải m3u8
 				return await pTimeout(
 					downloadM3U8Video(url, filePath),
 					PROMISE_TIMEOUT,
@@ -901,4 +1131,7 @@ async function downloadVideo(url, fileName, maxRetries = 3) {
 module.exports = {
 	downloadVideo,
 	isM3U8Url,
+	isYouTubeUrl,
+	isMagnetUrl,
+	isTorrentUrl,
 };

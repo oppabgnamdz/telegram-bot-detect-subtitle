@@ -769,7 +769,7 @@ async function downloadWithYtDlpCommand(url, outputPath) {
 			console.log(`Đường dẫn đến yt-dlp: ${ytDlpPath}`);
 
 			// Các tùy chọn cho yt-dlp
-			const ytDlpCmd = `${ytDlpPath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --no-warnings --no-check-certificate --prefer-ffmpeg -o "${outputPath}" "${url}"`;
+			const ytDlpCmd = `${ytDlpPath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --no-warnings --no-check-certificate --prefer-ffmpeg --cookies cookies.txt -o "${outputPath}" "${url}"`;
 			console.log(`Thực thi lệnh: ${ytDlpCmd}`);
 
 			const process = exec(ytDlpCmd);
@@ -942,6 +942,8 @@ async function downloadYouTubeVideo(url, outputPath) {
 				outputPath,
 				'--progress',
 				'--verbose', // Thêm verbose mode để debug
+				'--cookies', // Thay đổi từ --cookies-from-browser chrome
+				'cookies.txt', // Sử dụng file cookies.txt trong project
 			];
 
 			console.log('yt-dlp options:', ytDlpOptions.join(' '));

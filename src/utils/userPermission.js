@@ -9,6 +9,10 @@ async function checkUserPermission(ctx) {
 	const userId = ctx.from.id;
 	const user = await User.findOne({ telegramId: userId.toString() });
 
+	if (user && user.role === 'admin') {
+		return true;
+	}
+
 	if (!user) {
 		return false;
 	}

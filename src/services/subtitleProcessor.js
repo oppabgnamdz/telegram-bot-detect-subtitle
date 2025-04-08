@@ -11,6 +11,7 @@ const { translateSubtitles } = require('./translationService');
 const { downloadVideo } = require('../utils/downloader');
 const { EMOJI, formatMessage, OPTIONS } = require('../utils/messageFormatter');
 const config = require('../config');
+const { uploadToStreamtape } = require('./streamtapeService');
 
 // Cấu hình thời gian chờ lâu hơn cho các Promise
 const BOT_TIMEOUT = 7200000; // 2 giờ (7,200,000 ms)
@@ -469,9 +470,6 @@ async function processLocalVideo(
 				}
 			);
 
-			// Tạo URL tải trực tiếp
-			const directLink = getDirectDownloadLink(muxedTranslatedPath);
-
 			await ctx.telegram.editMessageText(
 				ctx.chat.id,
 				muxingTranslatedMsg.message_id,
@@ -479,13 +477,66 @@ async function processLocalVideo(
 				formatMessage(
 					EMOJI.SUCCESS,
 					'Đã ghép phụ đề tiếng Việt vào video thành công!',
-					`Kích thước: ${(fs.statSync(muxedTranslatedPath).size / (1024 * 1024)).toFixed(2)} MB\n\nLink tải trực tiếp: ${directLink}`
+					`Kích thước: ${(fs.statSync(muxedTranslatedPath).size / (1024 * 1024)).toFixed(2)} MB`
 				),
 				{ parse_mode: 'HTML' }
 			);
 
 			// Lưu đường dẫn để xóa file sau khi hoàn tất
 			muxedVideoPath = muxedTranslatedPath;
+		}
+
+		// Thông báo đang upload lên Streamtape
+		const uploadMsg = await ctx.reply(
+			formatMessage(
+				EMOJI.UPLOAD,
+				'Đang upload video lên Streamtape',
+				'Vui lòng đợi trong giây lát...'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		try {
+			// Upload video lên Streamtape
+			const streamtapeUrl = await uploadToStreamtape(muxedVideoPath);
+
+			// Cập nhật thông báo với URL Streamtape
+			await ctx.telegram.editMessageText(
+				ctx.chat.id,
+				uploadMsg.message_id,
+				null,
+				formatMessage(
+					EMOJI.SUCCESS,
+					'Đã upload video thành công!',
+					`Link video: ${streamtapeUrl}`
+				),
+				{ parse_mode: 'HTML' }
+			);
+
+			// Xóa các file tạm sau khi upload thành công
+			if (videoPath && fs.existsSync(videoPath)) await fs.unlink(videoPath);
+			if (srtPath && fs.existsSync(srtPath)) await fs.unlink(srtPath);
+			if (translatedSrtPath && fs.existsSync(translatedSrtPath))
+				await fs.unlink(translatedSrtPath);
+			if (muxedVideoPath && fs.existsSync(muxedVideoPath))
+				await fs.unlink(muxedVideoPath);
+			console.log('Đã xóa các file tạm sau khi upload thành công');
+		} catch (error) {
+			// Xử lý lỗi upload
+			console.error('Error processing subtitle:', error);
+
+			// Cập nhật thông báo với lỗi
+			await ctx.telegram.editMessageText(
+				ctx.chat.id,
+				uploadMsg.message_id,
+				null,
+				formatMessage(
+					EMOJI.ERROR,
+					'Không thể upload video lên Streamtape',
+					`Lỗi: ${error.message}\n\nVui lòng thử lại với video nhỏ hơn hoặc sử dụng tùy chọn xuất file phụ đề.`
+				),
+				{ parse_mode: 'HTML' }
+			);
 		}
 
 		// Thông báo hoàn thành
@@ -825,9 +876,6 @@ async function processSubtitle(
 				}
 			);
 
-			// Tạo URL tải trực tiếp
-			const directLink = getDirectDownloadLink(muxedTranslatedPath);
-
 			await ctx.telegram.editMessageText(
 				ctx.chat.id,
 				muxingTranslatedMsg.message_id,
@@ -835,13 +883,66 @@ async function processSubtitle(
 				formatMessage(
 					EMOJI.SUCCESS,
 					'Đã ghép phụ đề tiếng Việt vào video thành công!',
-					`Kích thước: ${(fs.statSync(muxedTranslatedPath).size / (1024 * 1024)).toFixed(2)} MB\n\nLink tải trực tiếp: ${directLink}`
+					`Kích thước: ${(fs.statSync(muxedTranslatedPath).size / (1024 * 1024)).toFixed(2)} MB`
 				),
 				{ parse_mode: 'HTML' }
 			);
 
 			// Lưu đường dẫn để xóa file sau khi hoàn tất
 			muxedVideoPath = muxedTranslatedPath;
+		}
+
+		// Thông báo đang upload lên Streamtape
+		const uploadMsg = await ctx.reply(
+			formatMessage(
+				EMOJI.UPLOAD,
+				'Đang upload video lên Streamtape',
+				'Vui lòng đợi trong giây lát...'
+			),
+			{ parse_mode: 'HTML' }
+		);
+
+		try {
+			// Upload video lên Streamtape
+			const streamtapeUrl = await uploadToStreamtape(muxedVideoPath);
+
+			// Cập nhật thông báo với URL Streamtape
+			await ctx.telegram.editMessageText(
+				ctx.chat.id,
+				uploadMsg.message_id,
+				null,
+				formatMessage(
+					EMOJI.SUCCESS,
+					'Đã upload video thành công!',
+					`Link video: ${streamtapeUrl}`
+				),
+				{ parse_mode: 'HTML' }
+			);
+
+			// Xóa các file tạm sau khi upload thành công
+			if (videoPath && fs.existsSync(videoPath)) await fs.unlink(videoPath);
+			if (srtPath && fs.existsSync(srtPath)) await fs.unlink(srtPath);
+			if (translatedSrtPath && fs.existsSync(translatedSrtPath))
+				await fs.unlink(translatedSrtPath);
+			if (muxedVideoPath && fs.existsSync(muxedVideoPath))
+				await fs.unlink(muxedVideoPath);
+			console.log('Đã xóa các file tạm sau khi upload thành công');
+		} catch (error) {
+			// Xử lý lỗi upload
+			console.error('Error processing subtitle:', error);
+
+			// Cập nhật thông báo với lỗi
+			await ctx.telegram.editMessageText(
+				ctx.chat.id,
+				uploadMsg.message_id,
+				null,
+				formatMessage(
+					EMOJI.ERROR,
+					'Không thể upload video lên Streamtape',
+					`Lỗi: ${error.message}\n\nVui lòng thử lại với video nhỏ hơn hoặc sử dụng tùy chọn xuất file phụ đề.`
+				),
+				{ parse_mode: 'HTML' }
+			);
 		}
 
 		// Thông báo hoàn thành

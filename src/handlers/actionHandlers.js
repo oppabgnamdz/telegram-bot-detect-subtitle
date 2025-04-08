@@ -70,14 +70,38 @@ async function handleDefaultPromptAction(ctx) {
 	const userId = ctx.from.id;
 	const userState = getUserState(userId);
 
+	// Sử dụng prompt mặc định
+	const defaultPrompt =
+		'Dịch phụ đề sang tiếng Việt, giữ nguyên nghĩa gốc và sử dụng ngôn ngữ tự nhiên';
+
+	// Nếu đã có lựa chọn output trước đó (từ handleOutputOption)
+	if (userState.state === 'waiting_for_prompt' && userState.outputOption) {
+		// Chuyển sang xử lý ngay
+		updateUserState(userId, 'processing', {
+			prompt: defaultPrompt,
+		});
+
+		const option = userState.outputOption;
+
+		// Xử lý theo loại file
+		if (userState.srtPath) {
+			await processSrtFile(ctx, userState.srtPath, defaultPrompt, option);
+		} else if (userState.videoPath) {
+			await processLocalVideo(ctx, userState.videoPath, defaultPrompt, option);
+		} else {
+			await processSubtitle(ctx, userState.videoUrl, defaultPrompt, option);
+		}
+
+		// Đặt lại trạng thái
+		resetUserState(userId);
+		return;
+	}
+
+	// Ngược lại, hỏi lựa chọn output
 	if (
 		userState.state === 'waiting_for_prompt' &&
 		(userState.videoUrl || userState.videoPath || userState.srtPath)
 	) {
-		// Sử dụng prompt mặc định
-		const defaultPrompt =
-			'Dịch phụ đề sang tiếng Việt, giữ nguyên nghĩa gốc và sử dụng ngôn ngữ tự nhiên';
-
 		// Cập nhật trạng thái và hiển thị tùy chọn output
 		updateUserState(userId, 'waiting_for_output_option', {
 			prompt: defaultPrompt,
@@ -123,10 +147,11 @@ async function handleDefaultPromptAction(ctx) {
 }
 
 /**
- * Xử lý nút "Xuất file phụ đề (Tùy chọn 1)"
+ * Xử lý các tùy chọn output
  * @param {object} ctx - Context Telegraf
+ * @param {string} option - Tùy chọn output (DEFAULT, MUXED_ORIGINAL, MUXED_TRANSLATED)
  */
-async function handleOutputOption1Action(ctx) {
+async function handleOutputOption(ctx, option) {
 	await ctx.answerCbQuery();
 	const userId = ctx.from.id;
 	const userState = getUserState(userId);
@@ -138,7 +163,41 @@ async function handleOutputOption1Action(ctx) {
 		);
 	}
 
-	updateUserState(userId, 'processing', { outputOption: OPTIONS.DEFAULT });
+	// Nếu chọn ghép phụ đề tiếng Việt vào video, yêu cầu prompt
+	if (option === OPTIONS.MUXED_TRANSLATED) {
+		updateUserState(userId, 'waiting_for_prompt', {
+			videoUrl: userState.videoUrl,
+			videoPath: userState.videoPath,
+			srtPath: userState.srtPath,
+			outputOption: option,
+		});
+
+		return await ctx.reply(
+			formatMessage(
+				EMOJI.TRANSLATE,
+				'Nhập prompt dịch',
+				'Vui lòng nhập nội dung hướng dẫn cách dịch phụ đề (ví dụ: "Dịch sang tiếng Việt, giữ nguyên nghĩa gốc").'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Dùng prompt mặc định', 'default_prompt')],
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+	}
+
+	// Nếu là các lựa chọn khác, sử dụng prompt mặc định hoặc null
+	const defaultPrompt =
+		option === OPTIONS.DEFAULT
+			? null
+			: 'Dịch phụ đề sang tiếng Việt, giữ nguyên nghĩa gốc và sử dụng ngôn ngữ tự nhiên';
+
+	updateUserState(userId, 'processing', {
+		outputOption: option,
+		prompt: userState.prompt || defaultPrompt,
+	});
 
 	// Xử lý theo loại file
 	if (userState.srtPath) {
@@ -146,126 +205,24 @@ async function handleOutputOption1Action(ctx) {
 		await processSrtFile(
 			ctx,
 			userState.srtPath,
-			userState.prompt,
-			OPTIONS.DEFAULT
+			userState.prompt || defaultPrompt,
+			option
 		);
 	} else if (userState.videoPath) {
 		// Nếu là file video đã tải lên
 		await processLocalVideo(
 			ctx,
 			userState.videoPath,
-			userState.prompt,
-			OPTIONS.DEFAULT
+			userState.prompt || defaultPrompt,
+			option
 		);
 	} else {
 		// Nếu là URL video
 		await processSubtitle(
 			ctx,
 			userState.videoUrl,
-			userState.prompt,
-			OPTIONS.DEFAULT
-		);
-	}
-
-	// Đặt lại trạng thái
-	resetUserState(userId);
-}
-
-/**
- * Xử lý nút "Ghép phụ đề gốc vào video (Tùy chọn 2)"
- * @param {object} ctx - Context Telegraf
- */
-async function handleOutputOption2Action(ctx) {
-	await ctx.answerCbQuery();
-	const userId = ctx.from.id;
-	const userState = getUserState(userId);
-
-	if (userState.state !== 'waiting_for_output_option') {
-		return ctx.reply(
-			formatMessage(EMOJI.ERROR, 'Lỗi', 'Vui lòng bắt đầu lại quá trình.'),
-			{ parse_mode: 'HTML' }
-		);
-	}
-
-	updateUserState(userId, 'processing', {
-		outputOption: OPTIONS.MUXED_ORIGINAL,
-	});
-
-	// Xử lý theo loại file
-	if (userState.srtPath) {
-		// Nếu là file SRT, cần video để ghép
-		await processSrtFile(
-			ctx,
-			userState.srtPath,
-			userState.prompt,
-			OPTIONS.MUXED_ORIGINAL
-		);
-	} else if (userState.videoPath) {
-		// Nếu là file video đã tải lên
-		await processLocalVideo(
-			ctx,
-			userState.videoPath,
-			userState.prompt,
-			OPTIONS.MUXED_ORIGINAL
-		);
-	} else {
-		// Nếu là URL video
-		await processSubtitle(
-			ctx,
-			userState.videoUrl,
-			userState.prompt,
-			OPTIONS.MUXED_ORIGINAL
-		);
-	}
-
-	// Đặt lại trạng thái
-	resetUserState(userId);
-}
-
-/**
- * Xử lý nút "Ghép phụ đề tiếng Việt vào video (Tùy chọn 3)"
- * @param {object} ctx - Context Telegraf
- */
-async function handleOutputOption3Action(ctx) {
-	await ctx.answerCbQuery();
-	const userId = ctx.from.id;
-	const userState = getUserState(userId);
-
-	if (userState.state !== 'waiting_for_output_option') {
-		return ctx.reply(
-			formatMessage(EMOJI.ERROR, 'Lỗi', 'Vui lòng bắt đầu lại quá trình.'),
-			{ parse_mode: 'HTML' }
-		);
-	}
-
-	updateUserState(userId, 'processing', {
-		outputOption: OPTIONS.MUXED_TRANSLATED,
-	});
-
-	// Xử lý theo loại file
-	if (userState.srtPath) {
-		// Nếu là file SRT, cần video để ghép
-		await processSrtFile(
-			ctx,
-			userState.srtPath,
-			userState.prompt,
-			OPTIONS.MUXED_TRANSLATED
-		);
-	} else if (userState.videoPath) {
-		// Nếu là file video đã tải lên
-		await processLocalVideo(
-			ctx,
-			userState.videoPath,
-			userState.prompt,
-			OPTIONS.MUXED_TRANSLATED
-		);
-	} else {
-		// Nếu là URL video
-		await processSubtitle(
-			ctx,
-			userState.videoUrl,
-			userState.prompt,
-			OPTIONS.MUXED_TRANSLATED
+			userState.prompt || defaultPrompt,
+			option
 		);
 	}
 
@@ -277,7 +234,9 @@ module.exports = {
 	handleCreateSubtitleAction,
 	handleCancelSubtitleAction,
 	handleDefaultPromptAction,
-	handleOutputOption1Action,
-	handleOutputOption2Action,
-	handleOutputOption3Action,
+	handleOutputOption1Action: (ctx) => handleOutputOption(ctx, OPTIONS.DEFAULT),
+	handleOutputOption2Action: (ctx) =>
+		handleOutputOption(ctx, OPTIONS.MUXED_ORIGINAL),
+	handleOutputOption3Action: (ctx) =>
+		handleOutputOption(ctx, OPTIONS.MUXED_TRANSLATED),
 };

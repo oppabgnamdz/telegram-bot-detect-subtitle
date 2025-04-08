@@ -103,6 +103,80 @@ async function extractSubtitles(videoPath) {
 	}
 }
 
+async function transcribeVideo(videoPath, model = 'tiny') {
+	console.log(`Đang xử lý video: ${videoPath}`);
+	console.log(`Sử dụng model: ${model}`);
+
+	try {
+		// Kiểm tra file video có tồn tại và hợp lệ không
+		if (!fs.existsSync(videoPath)) {
+			throw new Error('File video không tồn tại');
+		}
+
+		// Kiểm tra kích thước file
+		const stats = fs.statSync(videoPath);
+		if (stats.size === 0) {
+			throw new Error('File video trống');
+		}
+
+		// Thử kiểm tra file video bằng ffmpeg
+		const ffmpegCheck = await new Promise((resolve, reject) => {
+			const process = exec(
+				`ffmpeg -v error -i "${videoPath}" -f null - 2>&1`,
+				(error, stdout, stderr) => {
+					if (error) {
+						reject(new Error(`File video không hợp lệ: ${stderr}`));
+					} else {
+						resolve(true);
+					}
+				}
+			);
+		});
+
+		// Thực thi lệnh whisper
+		const command = `whisper "${videoPath}" --model ${model} --output_format srt --output_dir "./uploads"`;
+		console.log(`Thực thi lệnh: ${command}`);
+
+		const { stdout, stderr } = await execPromise(command);
+		console.log('Whisper stdout:', stdout);
+		console.log('Whisper stderr:', stderr);
+
+		// Kiểm tra file SRT đã được tạo chưa
+		const srtPath = videoPath.replace(/\.[^/.]+$/, '.srt');
+		if (!fs.existsSync(srtPath)) {
+			throw new Error('Không thể tạo file phụ đề');
+		}
+
+		return srtPath;
+	} catch (error) {
+		console.error('Error processing subtitle:', error);
+
+		// Xóa file video nếu có lỗi
+		if (fs.existsSync(videoPath)) {
+			try {
+				await fs.unlink(videoPath);
+				console.log('Đã xóa file video do lỗi:', videoPath);
+			} catch (unlinkError) {
+				console.error('Lỗi khi xóa file video:', unlinkError);
+			}
+		}
+
+		// Xóa file SRT nếu có
+		const srtPath = videoPath.replace(/\.[^/.]+$/, '.srt');
+		if (fs.existsSync(srtPath)) {
+			try {
+				await fs.unlink(srtPath);
+				console.log('Đã xóa file SRT do lỗi:', srtPath);
+			} catch (unlinkError) {
+				console.error('Lỗi khi xóa file SRT:', unlinkError);
+			}
+		}
+
+		throw error;
+	}
+}
+
 module.exports = {
 	extractSubtitles,
+	transcribeVideo,
 };

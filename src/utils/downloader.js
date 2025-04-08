@@ -726,7 +726,7 @@ async function downloadWithYtDlpCommand(url, outputPath) {
 
 	return new Promise((resolve, reject) => {
 		// Các tùy chọn cho yt-dlp
-		const ytDlpCmd = `yt-dlp -f "best" --no-warnings --no-check-certificate --prefer-ffmpeg -o "${outputPath}" "${url}"`;
+		const ytDlpCmd = `yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --no-warnings --no-check-certificate --prefer-ffmpeg -o "${outputPath}" "${url}"`;
 		console.log(`Thực thi lệnh: ${ytDlpCmd}`);
 
 		const process = exec(ytDlpCmd);
@@ -745,14 +745,33 @@ async function downloadWithYtDlpCommand(url, outputPath) {
 			console.error(`yt-dlp error: ${data}`);
 		});
 
-		process.on('close', (code) => {
+		process.on('close', async (code) => {
 			if (
-				code === 0 ||
-				(fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0)
+				code === 0 &&
+				fs.existsSync(outputPath) &&
+				fs.statSync(outputPath).size > 0
 			) {
-				process.stdout.write('\n');
-				console.log(`Tải thành công video vào ${outputPath} bằng lệnh yt-dlp`);
-				resolve(outputPath);
+				// Kiểm tra file bằng ffmpeg
+				exec(
+					`ffmpeg -v error -i "${outputPath}" -f null - 2>&1`,
+					(error, stdout, stderr) => {
+						if (error) {
+							try {
+								fs.unlinkSync(outputPath);
+								reject(new Error(`File video không hợp lệ: ${stderr}`));
+							} catch (unlinkError) {
+								console.error('Lỗi khi xóa file không hợp lệ:', unlinkError);
+								reject(error);
+							}
+						} else {
+							process.stdout.write('\n');
+							console.log(
+								`Tải thành công video vào ${outputPath} bằng lệnh yt-dlp`
+							);
+							resolve(outputPath);
+						}
+					}
+				);
 			} else {
 				// Nếu không tìm thấy file với tên chính xác, tìm file tương tự
 				const dir = path.dirname(outputPath);
@@ -765,33 +784,41 @@ async function downloadWithYtDlpCommand(url, outputPath) {
 				);
 
 				if (similarFiles.length > 0) {
-					// Nếu tìm thấy file tương tự, di chuyển file đó sang tên mong muốn
+					// Nếu tìm thấy file tương tự, kiểm tra tính hợp lệ
 					const similarFile = path.join(dir, similarFiles[0]);
-					fs.copyFileSync(similarFile, outputPath);
-					console.log(
-						`Đã tìm thấy file tương tự: ${similarFiles[0]}, sao chép thành ${path.basename(outputPath)}`
-					);
-					resolve(outputPath);
-				} else {
-					// Thử cách khác: sử dụng lệnh CURL
-					console.log('Thử tải bằng curl...');
-					const curlCmd = `curl -L -o "${outputPath}" --referer "${new URL(url).origin}" "${url}"`;
-					exec(curlCmd, (curlError, curlStdout, curlStderr) => {
-						if (
-							curlError ||
-							!fs.existsSync(outputPath) ||
-							fs.statSync(outputPath).size === 0
-						) {
-							reject(
-								new Error(
-									`yt-dlp và curl đều không tải được video (mã lỗi yt-dlp: ${code})`
-								)
-							);
-						} else {
-							console.log(`Tải thành công video vào ${outputPath} bằng curl`);
-							resolve(outputPath);
+					exec(
+						`ffmpeg -v error -i "${similarFile}" -f null - 2>&1`,
+						(error, stdout, stderr) => {
+							if (error) {
+								try {
+									fs.unlinkSync(similarFile);
+									reject(new Error(`File video không hợp lệ: ${stderr}`));
+								} catch (unlinkError) {
+									console.error('Lỗi khi xóa file không hợp lệ:', unlinkError);
+									reject(error);
+								}
+							} else {
+								// Copy file nếu đường dẫn khác nhau
+								if (similarFile !== outputPath) {
+									fs.copyFile(similarFile, outputPath)
+										.then(() => {
+											console.log(
+												`Đã copy file từ ${similarFile} đến ${outputPath}`
+											);
+											resolve(outputPath);
+										})
+										.catch((err) => {
+											console.error('Lỗi khi copy file:', err);
+											reject(err);
+										});
+								} else {
+									resolve(outputPath);
+								}
+							}
 						}
-					});
+					);
+				} else {
+					reject(new Error(`yt-dlp không tải được video (mã lỗi: ${code})`));
 				}
 			}
 		});
@@ -834,8 +861,28 @@ async function downloadYouTubeVideo(url, outputPath) {
 				ytDlp
 					.execPromise([url, ...ytDlpOptions])
 					.then(() => {
-						console.log(`Tải thành công video YouTube vào ${outputPath}`);
-						resolve(outputPath);
+						// Kiểm tra file sau khi tải
+						if (
+							!fs.existsSync(outputPath) ||
+							fs.statSync(outputPath).size === 0
+						) {
+							reject(new Error('File tải về không hợp lệ hoặc trống'));
+							return;
+						}
+
+						// Kiểm tra file bằng ffmpeg
+						exec(
+							`ffmpeg -v error -i "${outputPath}" -f null - 2>&1`,
+							(error, stdout, stderr) => {
+								if (error) {
+									fs.unlinkSync(outputPath);
+									reject(new Error(`File video không hợp lệ: ${stderr}`));
+								} else {
+									console.log(`Tải thành công video YouTube vào ${outputPath}`);
+									resolve(outputPath);
+								}
+							}
+						);
 					})
 					.catch((error) => {
 						console.error('Lỗi khi tải từ YouTube sử dụng yt-dlp-wrap:', error);

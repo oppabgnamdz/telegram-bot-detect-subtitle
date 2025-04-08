@@ -115,47 +115,86 @@ async function downloadFileFromTelegram(ctx, fileId, filePath) {
  * @param {string} fileExt - Phần mở rộng của file
  */
 async function handleSuccessfulUpload(ctx, userId, filePath, fileExt) {
-	const isSrtFile = fileExt.toLowerCase() === '.srt';
-	const stateData = isSrtFile ? { srtPath: filePath } : { videoPath: filePath };
-
-	// Chuyển sang trạng thái chờ chọn kiểu xuất kết quả thay vì chờ prompt
-	updateUserState(userId, 'waiting_for_output_option', {
-		...stateData,
-		prompt: null, // Prompt sẽ được yêu cầu sau nếu cần
-	});
-
-	const fileType = isSrtFile ? 'file phụ đề .srt' : 'file video';
-	await ctx.reply(
-		formatMessage(
-			EMOJI.OPTIONS,
-			`Đã nhận ${fileType}`,
-			'Vui lòng chọn cách bạn muốn nhận kết quả:'
-		),
-		{
-			parse_mode: 'HTML',
-			...Markup.inlineKeyboard([
-				[
-					Markup.button.callback(
-						'1. Xuất file phụ đề (mặc định)',
-						'output_option_1'
-					),
-				],
-				[
-					Markup.button.callback(
-						'2. Ghép phụ đề gốc vào video',
-						'output_option_2'
-					),
-				],
-				[
-					Markup.button.callback(
-						'3. Ghép phụ đề tiếng Việt vào video',
-						'output_option_3'
-					),
-				],
-				[Markup.button.callback('Hủy', 'cancel_subtitle')],
-			]),
+	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Không có quyền truy cập',
+					'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+			return;
 		}
-	);
+
+		const isSrtFile = fileExt.toLowerCase() === '.srt';
+		const stateData = isSrtFile
+			? { srtPath: filePath }
+			: { videoPath: filePath };
+
+		// Chuyển sang trạng thái chờ chọn kiểu xuất kết quả thay vì chờ prompt
+		updateUserState(userId, 'waiting_for_output_option', {
+			...stateData,
+			prompt: null, // Prompt sẽ được yêu cầu sau nếu cần
+		});
+
+		const fileType = isSrtFile ? 'file phụ đề .srt' : 'file video';
+		await ctx.reply(
+			formatMessage(
+				EMOJI.OPTIONS,
+				`Đã nhận ${fileType}`,
+				'Vui lòng chọn cách bạn muốn nhận kết quả:'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[
+						Markup.button.callback(
+							'1. Xuất file phụ đề (mặc định)',
+							'output_option_1'
+						),
+					],
+					[
+						Markup.button.callback(
+							'2. Ghép phụ đề gốc vào video',
+							'output_option_2'
+						),
+					],
+					[
+						Markup.button.callback(
+							'3. Ghép phụ đề tiếng Việt vào video',
+							'output_option_3'
+						),
+					],
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+	} catch (error) {
+		console.error('Lỗi khi xử lý file:', error);
+		await ctx.reply(
+			formatMessage(
+				EMOJI.ERROR,
+				'Không thể tải file',
+				'Đã xảy ra lỗi khi xử lý file. Vui lòng thử lại sau hoặc sử dụng URL thay thế.'
+			),
+			{ parse_mode: 'HTML' }
+		);
+		updateUserState(userId, 'idle');
+
+		// Xóa file nếu đã tải về nhưng xử lý thất bại
+		if (filePath && fs.existsSync(filePath)) {
+			try {
+				await fs.unlink(filePath);
+				console.log('Đã xóa file upload do lỗi:', filePath);
+			} catch (unlinkError) {
+				console.error('Lỗi khi xóa file:', unlinkError);
+			}
+		}
+	}
 }
 
 /**

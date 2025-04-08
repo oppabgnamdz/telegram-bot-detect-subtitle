@@ -13,6 +13,7 @@ const { EMOJI, formatMessage, OPTIONS } = require('../utils/messageFormatter');
 const config = require('../config');
 const { uploadToStreamtape } = require('./streamtapeService');
 const { isAdmin } = require('../utils/userPermission');
+const { checkUserPermission } = require('../utils/userPermission');
 
 // Cấu hình thời gian chờ lâu hơn cho các Promise
 const BOT_TIMEOUT = 7200000; // 2 giờ (7,200,000 ms)
@@ -60,6 +61,20 @@ async function checkWhisperInstallation() {
  */
 async function processSrtFile(ctx, srtPath, prompt, option = OPTIONS.DEFAULT) {
 	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Không có quyền truy cập',
+					'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+			return;
+		}
+
 		// Thông báo đang xử lý
 		await ctx.reply(
 			formatMessage(
@@ -252,9 +267,23 @@ async function processLocalVideo(
 	prompt,
 	option = OPTIONS.DEFAULT
 ) {
-	let srtPath, translatedSrtPath, muxedVideoPath;
-
 	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Không có quyền truy cập',
+					'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+			return;
+		}
+
+		let srtPath, translatedSrtPath, muxedVideoPath;
+
 		// Kiểm tra whisper
 		const whisperPromise = checkWhisperInstallation();
 		const whisperInstalled = await pTimeout(
@@ -645,9 +674,23 @@ async function processSubtitle(
 	prompt,
 	option = OPTIONS.DEFAULT
 ) {
-	let videoPath, srtPath, translatedSrtPath, muxedVideoPath;
-
 	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Không có quyền truy cập',
+					'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+			return;
+		}
+
+		let videoPath, srtPath, translatedSrtPath, muxedVideoPath;
+
 		// Kiểm tra whisper
 		const whisperPromise = checkWhisperInstallation();
 		const whisperInstalled = await pTimeout(

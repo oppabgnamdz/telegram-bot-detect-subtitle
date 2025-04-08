@@ -12,7 +12,6 @@ async function checkUserPermission(ctx) {
 	if (!user) {
 		return false;
 	}
-
 	// Reset số lệnh đã dùng nếu là ngày mới
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
@@ -25,7 +24,7 @@ async function checkUserPermission(ctx) {
 	}
 
 	// Kiểm tra giới hạn số lệnh
-	const MAX_COMMANDS_PER_DAY = 5; // Giới hạn 5 lệnh/ngày cho user default
+	const MAX_COMMANDS_PER_DAY = 1; // Giới hạn 1 lệnh/ngày cho user default
 	return user.commandsUsed < MAX_COMMANDS_PER_DAY;
 }
 

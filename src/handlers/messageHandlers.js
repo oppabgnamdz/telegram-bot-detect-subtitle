@@ -69,75 +69,93 @@ async function handleLegacySubtitleCommand(ctx, userId) {
  * @param {string} videoUrl - URL video
  */
 async function handleVideoUrl(ctx, userId, videoUrl) {
-	if (!videoUrl.startsWith('http') && !videoUrl.startsWith('magnet:')) {
-		ctx.reply(
+	try {
+		// Kiểm tra quyền người dùng
+		const hasPermission = await checkUserPermission(ctx);
+		if (!hasPermission) {
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Không có quyền truy cập',
+					'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay. Vui lòng thử lại vào ngày mai hoặc nâng cấp tài khoản.'
+				),
+				{ parse_mode: 'HTML' }
+			);
+			return;
+		}
+
+		if (!videoUrl.startsWith('http') && !videoUrl.startsWith('magnet:')) {
+			ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'URL không hợp lệ',
+					'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http, https hoặc magnet:. Bot hỗ trợ URL video trực tiếp, YouTube, stream m3u8, magnet link và file torrent.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Hủy', 'cancel_subtitle')],
+					]),
+				}
+			);
+			return;
+		}
+
+		let urlTypeInfo = '';
+		if (isYouTubeUrl(videoUrl)) {
+			urlTypeInfo =
+				'Đã phát hiện URL YouTube. Bot sẽ tự động xử lý video YouTube.';
+		} else if (isM3U8Url(videoUrl)) {
+			urlTypeInfo =
+				'Đã phát hiện URL HLS (m3u8). Bot sẽ tự động xử lý stream HLS.';
+		} else if (isMagnetUrl(videoUrl)) {
+			urlTypeInfo =
+				'Đã phát hiện Magnet link. Bot sẽ tự động tải video từ nguồn P2P.';
+		} else if (isTorrentUrl(videoUrl)) {
+			urlTypeInfo =
+				'Đã phát hiện Torrent URL. Bot sẽ tự động tải video từ torrent.';
+		}
+
+		// Cập nhật trạng thái với URL video nhưng trực tiếp yêu cầu chọn kiểu xuất kết quả
+		updateUserState(userId, 'waiting_for_output_option', {
+			videoUrl,
+			prompt: null, // Prompt sẽ được yêu cầu sau nếu cần
+		});
+
+		await ctx.reply(
 			formatMessage(
-				EMOJI.ERROR,
-				'URL không hợp lệ',
-				'Vui lòng cung cấp một URL hợp lệ bắt đầu bằng http, https hoặc magnet:. Bot hỗ trợ URL video trực tiếp, YouTube, stream m3u8, magnet link và file torrent.'
+				EMOJI.OPTIONS,
+				'Chọn kiểu xuất kết quả',
+				`${urlTypeInfo ? urlTypeInfo + '\n\n' : ''}Vui lòng chọn cách bạn muốn nhận kết quả:`
 			),
 			{
 				parse_mode: 'HTML',
 				...Markup.inlineKeyboard([
+					[
+						Markup.button.callback(
+							'1. Xuất file phụ đề (mặc định)',
+							'output_option_1'
+						),
+					],
+					[
+						Markup.button.callback(
+							'2. Ghép phụ đề gốc vào video',
+							'output_option_2'
+						),
+					],
+					[
+						Markup.button.callback(
+							'3. Ghép phụ đề tiếng Việt vào video',
+							'output_option_3'
+						),
+					],
 					[Markup.button.callback('Hủy', 'cancel_subtitle')],
 				]),
 			}
 		);
-		return;
+	} catch (error) {
+		// ... existing code ...
 	}
-
-	let urlTypeInfo = '';
-	if (isYouTubeUrl(videoUrl)) {
-		urlTypeInfo =
-			'Đã phát hiện URL YouTube. Bot sẽ tự động xử lý video YouTube.';
-	} else if (isM3U8Url(videoUrl)) {
-		urlTypeInfo =
-			'Đã phát hiện URL HLS (m3u8). Bot sẽ tự động xử lý stream HLS.';
-	} else if (isMagnetUrl(videoUrl)) {
-		urlTypeInfo =
-			'Đã phát hiện Magnet link. Bot sẽ tự động tải video từ nguồn P2P.';
-	} else if (isTorrentUrl(videoUrl)) {
-		urlTypeInfo =
-			'Đã phát hiện Torrent URL. Bot sẽ tự động tải video từ torrent.';
-	}
-
-	// Cập nhật trạng thái với URL video nhưng trực tiếp yêu cầu chọn kiểu xuất kết quả
-	updateUserState(userId, 'waiting_for_output_option', {
-		videoUrl,
-		prompt: null, // Prompt sẽ được yêu cầu sau nếu cần
-	});
-
-	await ctx.reply(
-		formatMessage(
-			EMOJI.OPTIONS,
-			'Chọn kiểu xuất kết quả',
-			`${urlTypeInfo ? urlTypeInfo + '\n\n' : ''}Vui lòng chọn cách bạn muốn nhận kết quả:`
-		),
-		{
-			parse_mode: 'HTML',
-			...Markup.inlineKeyboard([
-				[
-					Markup.button.callback(
-						'1. Xuất file phụ đề (mặc định)',
-						'output_option_1'
-					),
-				],
-				[
-					Markup.button.callback(
-						'2. Ghép phụ đề gốc vào video',
-						'output_option_2'
-					),
-				],
-				[
-					Markup.button.callback(
-						'3. Ghép phụ đề tiếng Việt vào video',
-						'output_option_3'
-					),
-				],
-				[Markup.button.callback('Hủy', 'cancel_subtitle')],
-			]),
-		}
-	);
 }
 
 /**

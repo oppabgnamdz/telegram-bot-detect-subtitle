@@ -28,6 +28,7 @@ async function handleCreateSubtitleAction(ctx) {
 	try {
 		// Kiểm tra quyền người dùng
 		const hasPermission = await checkUserPermission(ctx);
+		console.log({ hasPermission });
 		if (!hasPermission) {
 			await ctx.answerCbQuery(
 				'Bạn đã sử dụng hết lượt dùng trong ngày hôm nay.'

@@ -46,6 +46,11 @@ ENV NODE_ENV=production \
     PATH="/app/venv/bin:/usr/local/bin:$PATH" \
     PYTHONPATH="/app/venv/lib/python3.9/site-packages"
 
+# Sao chép cookies.txt (sẽ bỏ qua nếu không tồn tại)
+COPY cookies.txt* ./
+# Đảm bảo quyền đọc cho cookies.txt
+RUN chmod 644 cookies.txt 2>/dev/null || true
+
 # Sao chép mã nguồn (đặt ở cuối để tận dụng cache)
 COPY . .
 

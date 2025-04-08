@@ -163,3 +163,28 @@ Hoặc sử dụng định dạng HLS (m3u8):
 ## Giấy phép
 
 MIT
+
+## Cập nhật Cookies YouTube
+
+Để tải video từ YouTube, bot sử dụng cookies đăng nhập vào YouTube để vượt qua xác thực "bạn không phải là robot". Theo thời gian, cookies này có thể hết hạn và cần được cập nhật.
+
+### Cách cập nhật cookies.txt
+
+1. Trên máy cục bộ (đã đăng nhập YouTube trong Chrome):
+
+   ```bash
+   # Cài đặt thư viện cần thiết
+   pip install browser-cookie3
+
+   # Chạy script cập nhật cookies
+   python update_cookies.py
+   ```
+
+2. Nếu bạn đang chạy trên server:
+   - Chỉnh sửa file `server_cookies_update.sh` để cập nhật thông tin server
+   - Chạy script để tự động cập nhật cookies lên server:
+   ```bash
+   ./server_cookies_update.sh
+   ```
+
+Cookies thường cần được cập nhật sau khoảng 1-2 tuần nếu gặp lỗi "Confirm you're not a robot" khi tải video.

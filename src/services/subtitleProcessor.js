@@ -449,9 +449,11 @@ async function processLocalVideo(
 					messageId: muxingOriginalMsg.message_id,
 				},
 				style: {
-					backColor: '00000000', // Màu nền trong suốt
-					borderStyle: 0, // Không có viền
-					outline: 0, // Không có outline
+					primaryColour: '&H00FFFF', // Màu vàng
+					outlineColour: '&H000000', // Màu đen cho viền
+					backColour: '&H00000000', // Màu nền trong suốt
+					borderStyle: 1, // Kiểu viền (1 = viền mỏng)
+					outline: 1, // Độ dày viền
 					shadow: 0, // Không có bóng đổ
 				},
 			});
@@ -541,9 +543,11 @@ async function processLocalVideo(
 						messageId: muxingTranslatedMsg.message_id,
 					},
 					style: {
-						backColor: '00000000', // Màu nền trong suốt
-						borderStyle: 0, // Không có viền
-						outline: 0, // Không có outline
+						primaryColour: '&H00FFFF', // Màu vàng
+						outlineColour: '&H000000', // Màu đen cho viền
+						backColour: '&H00000000', // Màu nền trong suốt
+						borderStyle: 1, // Kiểu viền (1 = viền mỏng)
+						outline: 1, // Độ dày viền
 						shadow: 0, // Không có bóng đổ
 					},
 				}
@@ -891,9 +895,11 @@ async function processSubtitle(
 					messageId: muxingOriginalMsg.message_id,
 				},
 				style: {
-					backColor: '00000000', // Màu nền trong suốt
-					borderStyle: 0, // Không có viền
-					outline: 0, // Không có outline
+					primaryColour: '&H00FFFF', // Màu vàng
+					outlineColour: '&H000000', // Màu đen cho viền
+					backColour: '&H00000000', // Màu nền trong suốt
+					borderStyle: 1, // Kiểu viền (1 = viền mỏng)
+					outline: 1, // Độ dày viền
 					shadow: 0, // Không có bóng đổ
 				},
 			});
@@ -983,9 +989,11 @@ async function processSubtitle(
 						messageId: muxingTranslatedMsg.message_id,
 					},
 					style: {
-						backColor: '00000000', // Màu nền trong suốt
-						borderStyle: 0, // Không có viền
-						outline: 0, // Không có outline
+						primaryColour: '&H00FFFF', // Màu vàng
+						outlineColour: '&H000000', // Màu đen cho viền
+						backColour: '&H00000000', // Màu nền trong suốt
+						borderStyle: 1, // Kiểu viền (1 = viền mỏng)
+						outline: 1, // Độ dày viền
 						shadow: 0, // Không có bóng đổ
 					},
 				}

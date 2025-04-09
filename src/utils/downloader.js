@@ -107,8 +107,8 @@ function isTorrentUrl(url) {
 async function downloadM3U8Video(url, outputPath) {
 	console.log(`Đang tải video HLS (m3u8) từ ${url} vào ${outputPath}`);
 
-	// Trực tiếp sử dụng ffmpeg để tải xuống
-	return downloadM3U8UsingFFmpeg(url, outputPath);
+	// Sử dụng yt-dlp để tải xuống
+	return downloadWithYtDlp(url, outputPath);
 }
 
 /**

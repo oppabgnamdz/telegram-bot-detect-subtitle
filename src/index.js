@@ -73,6 +73,13 @@ const actionMap = {
 	output_option_1: actionHandlers.handleOutputOption1Action,
 	output_option_2: actionHandlers.handleOutputOption2Action,
 	output_option_3: actionHandlers.handleOutputOption3Action,
+	use_prompt_normal: actionHandlers.handleUsePromptNormal,
+	use_prompt_movie: actionHandlers.handleUsePromptMovie,
+	use_prompt_anime: actionHandlers.handleUsePromptAnime,
+	use_prompt_conversation: actionHandlers.handleUsePromptConversation,
+	use_prompt_adult: actionHandlers.handleUsePromptAdult,
+	auto_detect_language: actionHandlers.handleUseAutoDetectLanguage,
+	custom_prompt: actionHandlers.handleCustomPromptAction,
 };
 
 Object.entries(actionMap).forEach(([action, handler]) => {

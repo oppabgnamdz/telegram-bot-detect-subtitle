@@ -56,13 +56,121 @@ async function checkVideoSubtitleSupport(videoPath) {
 }
 
 /**
+ * Lấy thông tin độ phân giải của video
+ * @param {string} videoPath - Đường dẫn đến file video
+ * @returns {Promise<{width: number, height: number}>} - Độ phân giải của video
+ */
+async function getVideoResolution(videoPath) {
+	return new Promise((resolve, reject) => {
+		const command = `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${videoPath}"`;
+		exec(command, (error, stdout, stderr) => {
+			if (error) {
+				console.error(`Lỗi khi lấy độ phân giải video: ${error.message}`);
+				// Nếu không thể lấy, trả về độ phân giải mặc định HD
+				resolve({ width: 1280, height: 720 });
+				return;
+			}
+
+			try {
+				const [width, height] = stdout.trim().split('x').map(Number);
+				console.log(`Độ phân giải video: ${width}x${height}`);
+				resolve({ width, height });
+			} catch (e) {
+				console.error(`Lỗi khi phân tích độ phân giải: ${e.message}`);
+				resolve({ width: 1280, height: 720 });
+			}
+		});
+	});
+}
+
+/**
+ * Tính toán kích thước phụ đề dựa trên độ phân giải video
+ * @param {Object} resolution - Độ phân giải của video {width, height}
+ * @returns {number} - Kích thước phụ đề tối ưu
+ */
+function calculateOptimalFontSize(resolution) {
+	// Các ngưỡng độ phân giải
+	const resolutionThresholds = [
+		{ width: 3840, height: 2160, fontSize: 48 }, // 4K
+		{ width: 2560, height: 1440, fontSize: 36 }, // 2K
+		{ width: 1920, height: 1080, fontSize: 28 }, // Full HD
+		{ width: 1280, height: 720, fontSize: 24 }, // HD
+		{ width: 854, height: 480, fontSize: 20 }, // SD
+		{ width: 640, height: 360, fontSize: 16 }, // 360p
+		{ width: 426, height: 240, fontSize: 14 }, // 240p
+	];
+
+	// Tìm ngưỡng phù hợp với độ phân giải
+	for (const threshold of resolutionThresholds) {
+		if (
+			resolution.width >= threshold.width ||
+			resolution.height >= threshold.height
+		) {
+			return threshold.fontSize;
+		}
+	}
+
+	// Mặc định cho các độ phân giải rất nhỏ
+	return 12;
+}
+
+/**
+ * Tính toán vị trí phù hợp cho phụ đề dựa trên tỷ lệ khung hình
+ * @param {Object} resolution - Độ phân giải của video {width, height}
+ * @param {string} position - Vị trí chỉ định ('top', 'middle', 'bottom')
+ * @returns {string} - Biểu thức vị trí cho FFmpeg
+ */
+function calculateSubtitlePosition(resolution, position) {
+	// Tính tỷ lệ khung hình
+	const aspectRatio = resolution.width / resolution.height;
+
+	// Vị trí mặc định
+	let positionExpr = '(w-tw)/2:h-th-10'; // Bottom center
+
+	// Căn chỉnh vị trí dựa theo tỷ lệ khung hình và vị trí được chọn
+	switch (position) {
+		case 'top':
+			// Đối với video có tỷ lệ rộng, đặt cao hơn một chút
+			if (aspectRatio > 2) {
+				// Video siêu rộng (ultrawide)
+				positionExpr = '(w-tw)/2:h*0.05';
+			} else if (aspectRatio > 1.7) {
+				// Video rộng (widescreen)
+				positionExpr = '(w-tw)/2:h*0.08';
+			} else {
+				positionExpr = '(w-tw)/2:h*0.1'; // Video tỷ lệ bình thường
+			}
+			break;
+
+		case 'middle':
+			positionExpr = '(w-tw)/2:(h-th)/2';
+			break;
+
+		case 'bottom':
+		default:
+			// Đối với video có tỷ lệ rộng, đặt thấp hơn một chút để tránh bị che
+			if (aspectRatio > 2) {
+				// Video siêu rộng
+				positionExpr = '(w-tw)/2:h-th-(h*0.05)';
+			} else if (aspectRatio > 1.7) {
+				// Video rộng
+				positionExpr = '(w-tw)/2:h-th-(h*0.08)';
+			} else {
+				positionExpr = '(w-tw)/2:h-th-(h*0.1)'; // Video tỷ lệ bình thường
+			}
+	}
+
+	return positionExpr;
+}
+
+/**
  * Ghép phụ đề vào video sử dụng ffmpeg
  * @param {string} videoPath - Đường dẫn đến file video
  * @param {string} subtitlePath - Đường dẫn đến file phụ đề
  * @param {Object} options - Các tùy chọn gắn phụ đề
  * @param {string} options.language - Ngôn ngữ của phụ đề (mặc định: 'vie')
  * @param {string} options.font - Font chữ (mặc định: 'Arial')
- * @param {number} options.fontSize - Kích thước chữ (mặc định: 24)
+ * @param {number} options.fontSize - Kích thước chữ (mặc định: dựa trên độ phân giải)
  * @param {string} options.fontColor - Màu chữ (mặc định: 'white')
  * @param {string} options.position - Vị trí hiển thị (mặc định: 'bottom')
  * @param {boolean} options.skipFormatCheck - Bỏ qua kiểm tra định dạng video (mặc định: false)
@@ -73,11 +181,17 @@ async function checkVideoSubtitleSupport(videoPath) {
  */
 async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 	try {
+		// Lấy độ phân giải của video
+		const resolution = await getVideoResolution(videoPath);
+
+		// Tính toán kích thước phụ đề tối ưu
+		const optimalFontSize = calculateOptimalFontSize(resolution);
+
 		// Các tùy chọn mặc định
 		const defaultOptions = {
 			language: 'vie',
 			font: 'Arial',
-			fontSize: 24,
+			fontSize: optimalFontSize, // Sử dụng kích thước được tính toán
 			fontColor: 'white',
 			position: 'bottom',
 			skipFormatCheck: false,
@@ -93,6 +207,14 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 
 		// Kết hợp tùy chọn người dùng với tùy chọn mặc định
 		const finalOptions = { ...defaultOptions, ...options };
+
+		// Điều chỉnh độ dày viền dựa trên kích thước chữ
+		if (!options.style?.outline) {
+			finalOptions.style.outline = Math.max(
+				1,
+				Math.floor(finalOptions.fontSize / 16)
+			);
+		}
 
 		// Kiểm tra video có hỗ trợ gắn subtitle không (nếu không bỏ qua kiểm tra)
 		if (!finalOptions.skipFormatCheck) {
@@ -123,21 +245,17 @@ async function muxSubtitleToVideo(videoPath, subtitlePath, options = {}) {
 		const outputPath = path.join(config.uploadPath, outputFileName);
 
 		console.log(`Đang ghép phụ đề ${subtitlePath} vào video ${videoPath}`);
+		console.log(
+			`Sử dụng kích thước chữ: ${finalOptions.fontSize} cho độ phân giải ${resolution.width}x${resolution.height}`
+		);
 
 		const muxingPromise = new Promise((resolve, reject) => {
-			// Xác định vị trí hiển thị phụ đề
-			let positionArg = '';
-			switch (finalOptions.position) {
-				case 'top':
-					positionArg = '(w-tw)/2:10';
-					break;
-				case 'middle':
-					positionArg = '(w-tw)/2:(h-th)/2';
-					break;
-				case 'bottom':
-				default:
-					positionArg = '(w-tw)/2:h-th-10';
-			}
+			// Xác định vị trí hiển thị phụ đề dựa trên tỷ lệ khung hình
+			const positionArg = calculateSubtitlePosition(
+				resolution,
+				finalOptions.position
+			);
+			console.log(`Sử dụng vị trí phụ đề: ${positionArg}`);
 
 			// Sử dụng ffmpeg để ghép phụ đề vào video với các tùy chọn
 			// Thử hai phương pháp khác nhau để ghép phụ đề
@@ -371,4 +489,6 @@ function extractTime(statusText) {
 module.exports = {
 	muxSubtitleToVideo,
 	getDirectDownloadLink,
+	getVideoResolution,
+	calculateOptimalFontSize,
 };

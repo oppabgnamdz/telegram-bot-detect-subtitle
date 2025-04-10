@@ -17,6 +17,13 @@ const EMOJI = {
 	OPTIONS: '🔢',
 	INFO: 'ℹ️',
 	UPLOAD: '🔄',
+	ADULT: '🔞',
+	NORMAL: '🔍',
+	MOVIE: '🎥',
+	ANIME: '🎭',
+	CONVERSATION: '💬',
+	WARNING: '⚠️',
+	PROMPT: '💡',
 };
 
 // Định nghĩa các tùy chọn xuất kết quả

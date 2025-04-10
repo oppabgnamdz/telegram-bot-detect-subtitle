@@ -14,6 +14,10 @@ const config = require('../config');
 const { uploadToStreamtape } = require('./streamtapeService');
 const { isAdmin } = require('../utils/userPermission');
 const { checkUserPermission } = require('../utils/userPermission');
+const {
+	detectLanguage,
+	suggestTranslationPrompt,
+} = require('./languageDetectionService');
 
 // Cấu hình thời gian chờ lâu hơn cho các Promise
 const BOT_TIMEOUT = 7200000; // 2 giờ (7,200,000 ms)
@@ -312,6 +316,61 @@ async function processLocalVideo(
 			),
 			{ parse_mode: 'HTML' }
 		);
+
+		// Nếu không có prompt cụ thể, tự động phát hiện ngôn ngữ
+		if (!prompt || prompt.trim() === '') {
+			// Thông báo đang phát hiện ngôn ngữ
+			const detectingMsg = await ctx.reply(
+				formatMessage(
+					EMOJI.LOADING,
+					'Đang phát hiện ngôn ngữ',
+					'Đang phân tích âm thanh để xác định ngôn ngữ gốc...'
+				),
+				{ parse_mode: 'HTML' }
+			);
+
+			try {
+				// Phát hiện ngôn ngữ từ video
+				const languageInfo = await detectLanguage(videoPath);
+
+				// Tạo prompt gợi ý dựa trên ngôn ngữ phát hiện được
+				const suggestedPrompt = suggestTranslationPrompt(languageInfo);
+
+				// Cập nhật tin nhắn với kết quả phát hiện ngôn ngữ
+				await ctx.telegram.editMessageText(
+					ctx.chat.id,
+					detectingMsg.message_id,
+					null,
+					formatMessage(
+						EMOJI.SUCCESS,
+						'Đã phát hiện ngôn ngữ',
+						`Ngôn ngữ gốc được phát hiện: ${languageInfo.name}\n\nSử dụng prompt gợi ý: "${suggestedPrompt}"`
+					),
+					{ parse_mode: 'HTML' }
+				);
+
+				// Sử dụng prompt gợi ý
+				prompt = suggestedPrompt;
+			} catch (error) {
+				console.error('Lỗi khi phát hiện ngôn ngữ:', error);
+				// Cập nhật tin nhắn thông báo lỗi
+				await ctx.telegram.editMessageText(
+					ctx.chat.id,
+					detectingMsg.message_id,
+					null,
+					formatMessage(
+						EMOJI.WARNING,
+						'Không thể phát hiện ngôn ngữ',
+						'Không thể tự động xác định ngôn ngữ. Đang sử dụng prompt mặc định.'
+					),
+					{ parse_mode: 'HTML' }
+				);
+
+				// Sử dụng prompt mặc định
+				prompt =
+					'Dịch phụ đề sang tiếng Việt, giữ nguyên nghĩa gốc và sử dụng ngôn ngữ tự nhiên';
+			}
+		}
 
 		// Thông báo đang trích xuất phụ đề
 		const whisperMsg = await ctx.reply(
@@ -748,10 +807,65 @@ async function processSubtitle(
 			formatMessage(
 				EMOJI.SUCCESS,
 				'Đã tải video thành công!',
-				'Bắt đầu trích xuất phụ đề...'
+				`Kích thước: ${(fs.statSync(videoPath).size / (1024 * 1024)).toFixed(2)} MB`
 			),
 			{ parse_mode: 'HTML' }
 		);
+
+		// Nếu không có prompt cụ thể, tự động phát hiện ngôn ngữ
+		if (!prompt || prompt.trim() === '') {
+			// Thông báo đang phát hiện ngôn ngữ
+			const detectingMsg = await ctx.reply(
+				formatMessage(
+					EMOJI.LOADING,
+					'Đang phát hiện ngôn ngữ',
+					'Đang phân tích âm thanh để xác định ngôn ngữ gốc...'
+				),
+				{ parse_mode: 'HTML' }
+			);
+
+			try {
+				// Phát hiện ngôn ngữ từ video
+				const languageInfo = await detectLanguage(videoPath);
+
+				// Tạo prompt gợi ý dựa trên ngôn ngữ phát hiện được
+				const suggestedPrompt = suggestTranslationPrompt(languageInfo);
+
+				// Cập nhật tin nhắn với kết quả phát hiện ngôn ngữ
+				await ctx.telegram.editMessageText(
+					ctx.chat.id,
+					detectingMsg.message_id,
+					null,
+					formatMessage(
+						EMOJI.SUCCESS,
+						'Đã phát hiện ngôn ngữ',
+						`Ngôn ngữ gốc được phát hiện: ${languageInfo.name}\n\nSử dụng prompt gợi ý: "${suggestedPrompt}"`
+					),
+					{ parse_mode: 'HTML' }
+				);
+
+				// Sử dụng prompt gợi ý
+				prompt = suggestedPrompt;
+			} catch (error) {
+				console.error('Lỗi khi phát hiện ngôn ngữ:', error);
+				// Cập nhật tin nhắn thông báo lỗi
+				await ctx.telegram.editMessageText(
+					ctx.chat.id,
+					detectingMsg.message_id,
+					null,
+					formatMessage(
+						EMOJI.WARNING,
+						'Không thể phát hiện ngôn ngữ',
+						'Không thể tự động xác định ngôn ngữ. Đang sử dụng prompt mặc định.'
+					),
+					{ parse_mode: 'HTML' }
+				);
+
+				// Sử dụng prompt mặc định
+				prompt =
+					'Dịch phụ đề sang tiếng Việt, giữ nguyên nghĩa gốc và sử dụng ngôn ngữ tự nhiên';
+			}
+		}
 
 		// Thông báo đang trích xuất phụ đề
 		const whisperMsg = await ctx.reply(

@@ -19,6 +19,7 @@ const {
 	incrementUserCommand,
 	isAdmin,
 } = require('../utils/userPermission');
+const { DEFAULT_PROMPTS } = require('../utils/constants');
 
 /**
  * Xử lý nút "Tạo phụ đề mới"
@@ -217,6 +218,15 @@ async function handleOutputOption(ctx, option) {
 				parse_mode: 'HTML',
 				...Markup.inlineKeyboard([
 					[Markup.button.callback('Dùng prompt mặc định', 'default_prompt')],
+					[Markup.button.callback('Dùng prompt 18+', 'use_prompt_adult')],
+					[Markup.button.callback('Dùng prompt phim', 'use_prompt_movie')],
+					[Markup.button.callback('Dùng prompt anime', 'use_prompt_anime')],
+					[
+						Markup.button.callback(
+							'Dùng prompt hội thoại',
+							'use_prompt_conversation'
+						),
+					],
 					[Markup.button.callback('Hủy', 'cancel_subtitle')],
 				]),
 			}
@@ -268,13 +278,440 @@ async function handleOutputOption(ctx, option) {
 	await incrementUserCommand(ctx);
 }
 
+/**
+ * Xử lý action tạo phụ đề mới
+ * @param {object} ctx - Context Telegraf
+ */
+const handleCreateSubtitleActionNew = async (ctx) => {
+	try {
+		await ctx.answerCbQuery();
+
+		const userId = ctx.from.id.toString();
+		resetUserState(userId); // Reset trạng thái người dùng
+
+		// Cập nhật trạng thái người dùng
+		updateUserState(userId, 'waiting_for_url');
+
+		await ctx.editMessageText(
+			formatMessage(
+				EMOJI.URL,
+				'Tạo phụ đề mới',
+				'Vui lòng gửi URL video hoặc tải lên file video trực tiếp.\n\nBot hỗ trợ:\n• URL video trực tiếp (.mp4, .webm, ...)\n• YouTube (youtube.com, youtu.be)\n• Stream HLS (m3u8)\n• Magnet link (magnet:...)\n• Torrent file (.torrent)'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+	} catch (error) {
+		console.error('Error in handleCreateSubtitleAction:', error);
+	}
+};
+
+/**
+ * Xử lý action hủy quá trình tạo phụ đề
+ * @param {object} ctx - Context Telegraf
+ */
+const handleCancelSubtitleActionNew = async (ctx) => {
+	try {
+		await ctx.answerCbQuery();
+
+		const userId = ctx.from.id.toString();
+		resetUserState(userId); // Reset trạng thái người dùng
+
+		await ctx.editMessageText(
+			formatMessage(EMOJI.CANCEL, 'Đã hủy', 'Quá trình tạo phụ đề đã bị hủy.'),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Quay lại menu chính', 'start')],
+				]),
+			}
+		);
+	} catch (error) {
+		console.error('Error in handleCancelSubtitleAction:', error);
+	}
+};
+
+/**
+ * Xử lý action chọn prompt mặc định
+ * @param {object} ctx - Context Telegraf
+ */
+const handleDefaultPromptActionNew = async (ctx) => {
+	try {
+		await ctx.answerCbQuery();
+
+		const userId = ctx.from.id.toString();
+		const userState = getUserState(userId);
+
+		if (!userState) {
+			// Nếu không có trạng thái người dùng, quay về màn hình chính
+			await ctx.editMessageText(
+				formatMessage(
+					EMOJI.ERROR,
+					'Lỗi',
+					'Phiên làm việc của bạn đã hết hạn. Vui lòng bắt đầu lại.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Quay lại menu chính', 'start')],
+					]),
+				}
+			);
+			return;
+		}
+
+		// Hiển thị danh sách prompt mặc định
+		await ctx.editMessageText(
+			formatMessage(
+				EMOJI.PROMPT,
+				'Chọn prompt mặc định',
+				'Vui lòng chọn một trong các prompt mẫu dưới đây hoặc tự nhập prompt của riêng bạn:'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[
+						Markup.button.callback(
+							'Tự động phát hiện ngôn ngữ',
+							'auto_detect_language'
+						),
+					],
+					[Markup.button.callback('Dịch thông thường', 'use_prompt_normal')],
+					[Markup.button.callback('Dịch phim/phụ đề', 'use_prompt_movie')],
+					[Markup.button.callback('Dịch anime/manga', 'use_prompt_anime')],
+					[
+						Markup.button.callback(
+							'Dịch hội thoại tự nhiên',
+							'use_prompt_conversation'
+						),
+					],
+					[Markup.button.callback('Dịch phụ đề 18+', 'use_prompt_adult')],
+					[Markup.button.callback('Tự nhập prompt', 'custom_prompt')],
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+	} catch (error) {
+		console.error('Error in handleDefaultPromptAction:', error);
+	}
+};
+
+/**
+ * Xử lý action chọn tùy chọn xuất kết quả 1 (xuất file phụ đề)
+ * @param {object} ctx - Context Telegraf
+ */
+const handleOutputOption1Action = async (ctx) => {
+	await handleOutputOption(ctx, OPTIONS.DEFAULT);
+};
+
+/**
+ * Xử lý action chọn tùy chọn xuất kết quả 2 (ghép phụ đề gốc vào video)
+ * @param {object} ctx - Context Telegraf
+ */
+const handleOutputOption2Action = async (ctx) => {
+	await handleOutputOption(ctx, OPTIONS.MUXED_ORIGINAL);
+};
+
+/**
+ * Xử lý action chọn tùy chọn xuất kết quả 3 (ghép phụ đề tiếng Việt vào video)
+ * @param {object} ctx - Context Telegraf
+ */
+const handleOutputOption3Action = async (ctx) => {
+	await handleOutputOption(ctx, OPTIONS.MUXED_TRANSLATED);
+};
+
+/**
+ * Xử lý action chọn tùy chọn xuất kết quả
+ * @param {object} ctx - Context Telegraf
+ * @param {number} option - Tùy chọn xuất kết quả (OPTIONS.DEFAULT, OPTIONS.MUXED_ORIGINAL, OPTIONS.MUXED_TRANSLATED)
+ */
+async function handleOutputOptionNew(ctx, option) {
+	try {
+		await ctx.answerCbQuery();
+
+		const userId = ctx.from.id.toString();
+		const userState = getUserState(userId);
+
+		if (!userState) {
+			// Nếu không có trạng thái người dùng, quay về màn hình chính
+			await ctx.editMessageText(
+				formatMessage(
+					EMOJI.ERROR,
+					'Lỗi',
+					'Phiên làm việc của bạn đã hết hạn. Vui lòng bắt đầu lại.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Quay lại menu chính', 'start')],
+					]),
+				}
+			);
+			return;
+		}
+
+		// Cập nhật lựa chọn xuất kết quả
+		updateUserState(userId, userState.state, {
+			...userState,
+			outputOption: option,
+		});
+
+		// Nếu đã có prompt, tiến hành xử lý
+		if (userState.prompt) {
+			await handleProcess(ctx, userId, option);
+			return;
+		}
+
+		// Nếu chưa có prompt, yêu cầu nhập prompt
+		await ctx.editMessageText(
+			formatMessage(
+				EMOJI.PROMPT,
+				'Nhập prompt dịch thuật',
+				'Vui lòng nhập prompt mô tả cách bạn muốn dịch phụ đề sang tiếng Việt.\nVí dụ: "Dịch phụ đề này sang tiếng Việt, giữ nguyên ý nghĩa gốc"'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Chọn prompt mẫu', 'default_prompt')],
+					[Markup.button.callback('Dùng prompt phim', 'use_prompt_movie')],
+					[Markup.button.callback('Dùng prompt anime', 'use_prompt_anime')],
+					[
+						Markup.button.callback(
+							'Dịch hội thoại tự nhiên',
+							'use_prompt_conversation'
+						),
+					],
+					[Markup.button.callback('Dùng prompt 18+', 'use_prompt_adult')],
+					[Markup.button.callback('Tự nhập prompt', 'custom_prompt')],
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+
+		// Cập nhật trạng thái người dùng
+		updateUserState(userId, 'waiting_for_prompt');
+	} catch (error) {
+		console.error('Error in handleOutputOption:', error);
+	}
+}
+
+/**
+ * Xử lý chọn prompt mẫu
+ */
+const handleUsePromptAction = async (ctx, promptType) => {
+	try {
+		await ctx.answerCbQuery();
+
+		const userId = ctx.from.id.toString();
+		const userState = getUserState(userId);
+
+		if (!userState) {
+			// Nếu không có trạng thái người dùng, quay về màn hình chính
+			await ctx.editMessageText(
+				formatMessage(
+					EMOJI.ERROR,
+					'Lỗi',
+					'Phiên làm việc của bạn đã hết hạn. Vui lòng bắt đầu lại.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Quay lại menu chính', 'start')],
+					]),
+				}
+			);
+			return;
+		}
+
+		let prompt = DEFAULT_PROMPTS.normal;
+		switch (promptType) {
+			case 'normal':
+				prompt = DEFAULT_PROMPTS.normal;
+				break;
+			case 'movie':
+				prompt = DEFAULT_PROMPTS.movie;
+				break;
+			case 'anime':
+				prompt = DEFAULT_PROMPTS.anime;
+				break;
+			case 'conversation':
+				prompt = DEFAULT_PROMPTS.conversation;
+				break;
+			case 'adult':
+				prompt = DEFAULT_PROMPTS.adult;
+				break;
+			case 'auto':
+				// Sẽ chuyển sang tự động phát hiện ngôn ngữ
+				prompt = '';
+				break;
+			default:
+				prompt = DEFAULT_PROMPTS.normal;
+		}
+
+		// Cập nhật prompt
+		updateUserState(userId, 'processing', {
+			...userState,
+			prompt,
+		});
+
+		// Hiển thị thông báo chờ xử lý
+		await ctx.editMessageText(
+			formatMessage(
+				promptType === 'auto' ? EMOJI.LOADING : EMOJI.PROMPT,
+				promptType === 'auto'
+					? 'Đang tự động phát hiện ngôn ngữ'
+					: 'Đã chọn prompt',
+				promptType === 'auto'
+					? 'Hệ thống sẽ tự động phát hiện ngôn ngữ của video và đề xuất prompt phù hợp.\nĐang bắt đầu xử lý, vui lòng đợi trong giây lát...'
+					: `Đã chọn prompt: "${prompt}"\nĐang bắt đầu xử lý, vui lòng đợi trong giây lát...`
+			),
+			{
+				parse_mode: 'HTML',
+			}
+		);
+
+		// Tiến hành xử lý
+		await handleProcess(ctx, userId, userState.outputOption);
+	} catch (error) {
+		console.error('Error in handleUsePromptAction:', error);
+	}
+};
+
+/**
+ * Xử lý khi người dùng chọn tự nhập prompt
+ */
+const handleCustomPromptAction = async (ctx) => {
+	try {
+		await ctx.answerCbQuery();
+
+		const userId = ctx.from.id.toString();
+		const userState = getUserState(userId);
+
+		if (!userState) {
+			// Nếu không có trạng thái người dùng, quay về màn hình chính
+			await ctx.editMessageText(
+				formatMessage(
+					EMOJI.ERROR,
+					'Lỗi',
+					'Phiên làm việc của bạn đã hết hạn. Vui lòng bắt đầu lại.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Quay lại menu chính', 'start')],
+					]),
+				}
+			);
+			return;
+		}
+
+		// Yêu cầu người dùng nhập prompt
+		await ctx.editMessageText(
+			formatMessage(
+				EMOJI.PROMPT,
+				'Nhập prompt dịch thuật',
+				'Vui lòng nhập prompt mô tả cách bạn muốn dịch phụ đề sang tiếng Việt.\nVí dụ: "Dịch phụ đề này sang tiếng Việt, giữ nguyên ý nghĩa gốc"'
+			),
+			{
+				parse_mode: 'HTML',
+				...Markup.inlineKeyboard([
+					[Markup.button.callback('Quay lại', 'default_prompt')],
+					[Markup.button.callback('Dùng prompt phim', 'use_prompt_movie')],
+					[Markup.button.callback('Dùng prompt anime', 'use_prompt_anime')],
+					[
+						Markup.button.callback(
+							'Dịch hội thoại tự nhiên',
+							'use_prompt_conversation'
+						),
+					],
+					[Markup.button.callback('Dùng prompt 18+', 'use_prompt_adult')],
+					[Markup.button.callback('Hủy', 'cancel_subtitle')],
+				]),
+			}
+		);
+
+		// Cập nhật trạng thái người dùng
+		updateUserState(userId, 'waiting_for_prompt');
+	} catch (error) {
+		console.error('Error in handleCustomPromptAction:', error);
+	}
+};
+
+/**
+ * Xử lý quá trình tạo phụ đề
+ * @param {object} ctx - Context Telegraf
+ * @param {string} userId - ID của người dùng
+ * @param {number} option - Tùy chọn xuất kết quả
+ */
+async function handleProcess(ctx, userId, option) {
+	try {
+		const userState = getUserState(userId);
+
+		if (!userState) {
+			return;
+		}
+
+		// Đánh dấu đang xử lý
+		updateUserState(userId, 'processing');
+
+		// Tiến hành xử lý dựa trên loại video
+		if (userState.srtPath) {
+			// Nếu là file SRT
+			await processSrtFile(ctx, userState.srtPath, userState.prompt, option);
+		} else if (userState.videoPath) {
+			// Nếu là video được tải lên
+			await processLocalVideo(
+				ctx,
+				userState.videoPath,
+				userState.prompt,
+				option
+			);
+		} else if (userState.videoUrl) {
+			// Nếu là URL video
+			await processSubtitle(ctx, userState.videoUrl, userState.prompt, option);
+		} else {
+			// Nếu không có thông tin video
+			await ctx.reply(
+				formatMessage(
+					EMOJI.ERROR,
+					'Lỗi',
+					'Không có thông tin video được cung cấp. Vui lòng thử lại.'
+				),
+				{
+					parse_mode: 'HTML',
+					...Markup.inlineKeyboard([
+						[Markup.button.callback('Tạo phụ đề mới', 'create_subtitle')],
+						[Markup.button.callback('Quay lại menu chính', 'start')],
+					]),
+				}
+			);
+		}
+
+		// Reset trạng thái người dùng sau khi hoàn tất
+		resetUserState(userId);
+	} catch (error) {
+		console.error('Error in handleProcess:', error);
+	}
+}
+
+// Xuất các hàm xử lý action
 module.exports = {
 	handleCreateSubtitleAction,
 	handleCancelSubtitleAction,
 	handleDefaultPromptAction,
-	handleOutputOption1Action: (ctx) => handleOutputOption(ctx, OPTIONS.DEFAULT),
-	handleOutputOption2Action: (ctx) =>
-		handleOutputOption(ctx, OPTIONS.MUXED_ORIGINAL),
-	handleOutputOption3Action: (ctx) =>
-		handleOutputOption(ctx, OPTIONS.MUXED_TRANSLATED),
+	handleOutputOption1Action,
+	handleOutputOption2Action,
+	handleOutputOption3Action,
+	handleUsePromptNormal: (ctx) => handleUsePromptAction(ctx, 'normal'),
+	handleUsePromptMovie: (ctx) => handleUsePromptAction(ctx, 'movie'),
+	handleUsePromptAnime: (ctx) => handleUsePromptAction(ctx, 'anime'),
+	handleUsePromptConversation: (ctx) =>
+		handleUsePromptAction(ctx, 'conversation'),
+	handleUsePromptAdult: (ctx) => handleUsePromptAction(ctx, 'adult'),
+	handleUseAutoDetectLanguage: (ctx) => handleUsePromptAction(ctx, 'auto'),
+	handleCustomPromptAction,
 };

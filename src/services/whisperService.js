@@ -39,7 +39,7 @@ async function extractSubtitles(videoPath) {
 
 		const whisperPromise = new Promise((resolve, reject) => {
 			// Sử dụng Whisper CLI để trích xuất phụ đề
-			const command = `whisper "${videoPath}" --model ${config.whisperModel} --output_format srt --output_dir "${config.uploadPath}"`;
+			const command = `whisper "${videoPath}" --model ${config.whisperModel} --language ja --output_format srt --output_dir "${config.uploadPath}"`;
 			console.log(`Thực thi lệnh: ${command}`);
 
 			// Không giới hạn timeout để xử lý video dài
@@ -134,7 +134,7 @@ async function transcribeVideo(videoPath, model = 'tiny') {
 		});
 
 		// Thực thi lệnh whisper
-		const command = `whisper "${videoPath}" --model ${model} --output_format srt --output_dir "./uploads"`;
+		const command = `whisper "${videoPath}" --model ${model} --language ja --output_format srt --output_dir "./uploads"`;
 		console.log(`Thực thi lệnh: ${command}`);
 
 		const { stdout, stderr } = await execPromise(command);

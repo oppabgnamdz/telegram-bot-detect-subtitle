@@ -44,9 +44,8 @@ async function detectLanguage(videoPath) {
 
 		// Sử dụng whisper để phát hiện ngôn ngữ
 		const languageDetectionPromise = new Promise((resolve, reject) => {
-			// Bỏ tham số --language auto vì không được hỗ trợ
-			// Whisper sẽ tự động phát hiện ngôn ngữ mà không cần tham số này
-			const command = `whisper "${samplePath}" --model tiny --task transcribe --output_format json --output_dir "${config.uploadPath}"`;
+			// Sử dụng tham số --language ja để luôn coi ngôn ngữ là tiếng Nhật
+			const command = `whisper "${samplePath}" --model tiny --language ja --task transcribe --output_format json --output_dir "${config.uploadPath}"`;
 			console.log(`Thực thi Whisper để phát hiện ngôn ngữ: ${command}`);
 
 			exec(command, (error, stdout, stderr) => {
@@ -83,8 +82,8 @@ async function detectLanguage(videoPath) {
 					fs.unlinkSync(jsonPath);
 					console.log(`Đã xóa file kết quả JSON: ${jsonPath}`);
 
-					// Lấy mã ngôn ngữ từ kết quả
-					const detectedLanguage = result.language;
+					// Ghi đè ngôn ngữ phát hiện thành tiếng Nhật
+					const detectedLanguage = 'ja'; // Luôn trả về tiếng Nhật
 					console.log(`Ngôn ngữ được phát hiện: ${detectedLanguage}`);
 
 					// Trả về thông tin ngôn ngữ

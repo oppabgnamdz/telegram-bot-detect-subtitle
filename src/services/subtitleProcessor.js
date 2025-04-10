@@ -323,8 +323,8 @@ async function processLocalVideo(
 			const detectingMsg = await ctx.reply(
 				formatMessage(
 					EMOJI.LOADING,
-					'Đang phát hiện ngôn ngữ',
-					'Đang phân tích âm thanh để xác định ngôn ngữ gốc...'
+					'Đang xử lý với tiếng Nhật',
+					'Đang phân tích âm thanh tiếng Nhật của video...'
 				),
 				{ parse_mode: 'HTML' }
 			);
@@ -343,8 +343,8 @@ async function processLocalVideo(
 					null,
 					formatMessage(
 						EMOJI.SUCCESS,
-						'Đã phát hiện ngôn ngữ',
-						`Ngôn ngữ gốc được phát hiện: ${languageInfo.name}\n\nSử dụng prompt gợi ý: "${suggestedPrompt}"`
+						'Đã chọn tiếng Nhật',
+						`Đã tự động chọn ngôn ngữ: ${languageInfo.name}\n\nSử dụng prompt gợi ý: "${suggestedPrompt}"`
 					),
 					{ parse_mode: 'HTML' }
 				);
@@ -377,7 +377,7 @@ async function processLocalVideo(
 			formatMessage(
 				EMOJI.SUBTITLE,
 				'Đang trích xuất phụ đề',
-				`Đang sử dụng Whisper (model: ${config.whisperModel})...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
+				`Đang sử dụng Whisper (model: ${config.whisperModel}, ngôn ngữ: Tiếng Nhật)...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
 			),
 			{ parse_mode: 'HTML' }
 		);
@@ -818,8 +818,8 @@ async function processSubtitle(
 			const detectingMsg = await ctx.reply(
 				formatMessage(
 					EMOJI.LOADING,
-					'Đang phát hiện ngôn ngữ',
-					'Đang phân tích âm thanh để xác định ngôn ngữ gốc...'
+					'Đang xử lý với tiếng Nhật',
+					'Đang phân tích âm thanh tiếng Nhật của video...'
 				),
 				{ parse_mode: 'HTML' }
 			);
@@ -838,8 +838,8 @@ async function processSubtitle(
 					null,
 					formatMessage(
 						EMOJI.SUCCESS,
-						'Đã phát hiện ngôn ngữ',
-						`Ngôn ngữ gốc được phát hiện: ${languageInfo.name}\n\nSử dụng prompt gợi ý: "${suggestedPrompt}"`
+						'Đã chọn tiếng Nhật',
+						`Đã tự động chọn ngôn ngữ: ${languageInfo.name}\n\nSử dụng prompt gợi ý: "${suggestedPrompt}"`
 					),
 					{ parse_mode: 'HTML' }
 				);
@@ -872,7 +872,7 @@ async function processSubtitle(
 			formatMessage(
 				EMOJI.SUBTITLE,
 				'Đang trích xuất phụ đề',
-				`Đang sử dụng Whisper (model: ${config.whisperModel})...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
+				`Đang sử dụng Whisper (model: ${config.whisperModel}, ngôn ngữ: Tiếng Nhật)...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
 			),
 			{ parse_mode: 'HTML' }
 		);

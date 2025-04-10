@@ -23,35 +23,53 @@ const {
 const BOT_TIMEOUT = 7200000; // 2 giờ (7,200,000 ms)
 
 /**
- * Kiểm tra cài đặt whisper khi khởi động
- * @returns {Promise<boolean>} - Trả về true nếu whisper đã được cài đặt
+ * Kiểm tra cài đặt faster-whisper khi khởi động
+ * @returns {Promise<boolean>} - Trả về true nếu faster-whisper đã được cài đặt
  */
 async function checkWhisperInstallation() {
 	try {
 		const { exec } = require('child_process');
 		const checkPromise = new Promise((resolve, reject) => {
-			exec('which whisper || echo "not found"', (error, stdout, stderr) => {
-				const whisperPath = stdout.trim();
-				if (whisperPath === 'not found') {
-					console.warn(
-						'CẢNH BÁO: Whisper không được tìm thấy trong PATH. Bot có thể không hoạt động đúng.'
-					);
-					resolve(false);
-				} else {
-					console.log(`Whisper đã được cài đặt tại: ${whisperPath}`);
-					resolve(true);
+			// Kiểm tra faster-whisper thông qua pip list
+			exec(
+				'pip list | grep -q faster-whisper && echo "found" || echo "not found"',
+				(error, stdout, stderr) => {
+					const fasterWhisperStatus = stdout.trim();
+					if (fasterWhisperStatus === 'not found') {
+						console.warn(
+							'CẢNH BÁO: Faster-Whisper không được tìm thấy. Bot có thể không hoạt động đúng.'
+						);
+						resolve(false);
+					} else {
+						// Kiểm tra phiên bản faster-whisper
+						exec(
+							'pip show faster-whisper | grep Version',
+							(error, stdout, stderr) => {
+								if (error) {
+									console.log(
+										'Faster-Whisper đã được cài đặt nhưng không thể xác định phiên bản.'
+									);
+									resolve(true);
+								} else {
+									const versionLine = stdout.trim();
+									console.log(`Faster-Whisper đã được cài đặt: ${versionLine}`);
+									resolve(true);
+								}
+							}
+						);
+					}
 				}
-			});
+			);
 		});
 
 		// Áp dụng timeout dài hơn
 		return pTimeout(
 			checkPromise,
 			BOT_TIMEOUT,
-			`Quá thời gian khi kiểm tra cài đặt Whisper`
+			`Quá thời gian khi kiểm tra cài đặt Faster-Whisper`
 		);
 	} catch (error) {
-		console.error('Không thể kiểm tra cài đặt Whisper:', error.message);
+		console.error('Không thể kiểm tra cài đặt Faster-Whisper:', error.message);
 		return false;
 	}
 }
@@ -288,23 +306,25 @@ async function processLocalVideo(
 
 		let srtPath, translatedSrtPath, muxedVideoPath;
 
-		// Kiểm tra whisper
+		// Kiểm tra faster-whisper
 		const whisperPromise = checkWhisperInstallation();
 		const whisperInstalled = await pTimeout(
 			whisperPromise,
 			BOT_TIMEOUT,
-			'Quá thời gian khi kiểm tra cài đặt Whisper'
+			`Quá thời gian khi kiểm tra cài đặt Faster-Whisper`
 		);
 
 		if (!whisperInstalled) {
-			return ctx.reply(
+			// Trả về thông báo lỗi
+			await ctx.reply(
 				formatMessage(
 					EMOJI.ERROR,
-					'Lỗi cài đặt',
-					'Whisper chưa được cài đặt hoặc không có trong PATH. Vui lòng liên hệ quản trị viên.'
+					'Lỗi hệ thống',
+					'Faster-Whisper chưa được cài đặt hoặc không có. Vui lòng liên hệ quản trị viên.'
 				),
 				{ parse_mode: 'HTML' }
 			);
+			return;
 		}
 
 		// Thông báo bắt đầu quá trình
@@ -375,9 +395,9 @@ async function processLocalVideo(
 		// Thông báo đang trích xuất phụ đề
 		const whisperMsg = await ctx.reply(
 			formatMessage(
-				EMOJI.SUBTITLE,
+				EMOJI.LOADING,
 				'Đang trích xuất phụ đề',
-				`Đang sử dụng Whisper (model: ${config.whisperModel}, ngôn ngữ: Tiếng Nhật)...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
+				`Đang sử dụng Faster-Whisper (model: ${config.whisperModel}, ngôn ngữ: Tiếng Nhật)...\nQuá trình này có thể mất 2-5 phút tùy thuộc vào độ dài video.`
 			),
 			{ parse_mode: 'HTML' }
 		);
@@ -754,23 +774,25 @@ async function processSubtitle(
 
 		let videoPath, srtPath, translatedSrtPath, muxedVideoPath;
 
-		// Kiểm tra whisper
+		// Kiểm tra faster-whisper
 		const whisperPromise = checkWhisperInstallation();
 		const whisperInstalled = await pTimeout(
 			whisperPromise,
 			BOT_TIMEOUT,
-			'Quá thời gian khi kiểm tra cài đặt Whisper'
+			`Quá thời gian khi kiểm tra cài đặt Faster-Whisper`
 		);
 
 		if (!whisperInstalled) {
-			return ctx.reply(
+			// Trả về thông báo lỗi
+			await ctx.reply(
 				formatMessage(
 					EMOJI.ERROR,
-					'Lỗi cài đặt',
-					'Whisper chưa được cài đặt hoặc không có trong PATH. Vui lòng liên hệ quản trị viên.'
+					'Lỗi hệ thống',
+					'Faster-Whisper chưa được cài đặt hoặc không có. Vui lòng liên hệ quản trị viên.'
 				),
 				{ parse_mode: 'HTML' }
 			);
+			return;
 		}
 
 		// Thông báo bắt đầu quá trình
@@ -870,9 +892,9 @@ async function processSubtitle(
 		// Thông báo đang trích xuất phụ đề
 		const whisperMsg = await ctx.reply(
 			formatMessage(
-				EMOJI.SUBTITLE,
+				EMOJI.LOADING,
 				'Đang trích xuất phụ đề',
-				`Đang sử dụng Whisper (model: ${config.whisperModel}, ngôn ngữ: Tiếng Nhật)...\nQuá trình này có thể mất vài phút tùy thuộc vào độ dài video.`
+				`Đang sử dụng Faster-Whisper (model: ${config.whisperModel}, ngôn ngữ: Tiếng Nhật)...\nQuá trình này có thể mất 2-5 phút tùy thuộc vào độ dài video.`
 			),
 			{ parse_mode: 'HTML' }
 		);

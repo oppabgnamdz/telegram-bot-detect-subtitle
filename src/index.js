@@ -101,7 +101,7 @@ async function startBot() {
 		await checkWhisperInstallation();
 		await bot.launch();
 		console.log('Bot đã khởi động thành công!');
-		console.log(`Sử dụng model Whisper: ${config.whisperModel}`);
+		console.log(`Sử dụng model Faster-Whisper: ${config.whisperModel}`);
 	} catch (err) {
 		console.error('Không thể khởi động bot:', err);
 	}

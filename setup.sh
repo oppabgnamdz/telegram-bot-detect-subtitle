@@ -67,24 +67,19 @@ echo "=== Tạo môi trường ảo Python ==="
 python3 -m venv venv
 source venv/bin/activate
 
-# Cài đặt whisper
+# Cài đặt faster-whisper
 echo ""
-echo "=== Cài đặt Whisper ==="
+echo "=== Cài đặt Faster-Whisper ==="
 pip install --upgrade pip
 pip install setuptools-rust
-pip install openai-whisper
+pip install faster-whisper
 
-# Kiểm tra cài đặt whisper
-if ! command -v whisper &> /dev/null; then
-    echo "⚠️ Không tìm thấy lệnh whisper trong PATH. Vui lòng đảm bảo đường dẫn tới thư mục bin của môi trường ảo có trong biến PATH."
-    echo "Bạn có thể thêm đường dẫn sau vào file .bashrc hoặc .zshrc:"
-    echo "export PATH=\"$(pwd)/venv/bin:\$PATH\""
-    
-    # Thêm đường dẫn vào môi trường hiện tại
-    export PATH="$(pwd)/venv/bin:$PATH"
-    echo "✅ Đã tạm thời thêm đường dẫn vào PATH cho phiên làm việc hiện tại."
+# Kiểm tra cài đặt faster-whisper
+if pip list | grep -q faster-whisper; then
+    echo "✅ Faster-Whisper đã được cài đặt thành công!"
 else
-    echo "✅ Whisper đã được cài đặt thành công!"
+    echo "⚠️ Không thể cài đặt Faster-Whisper. Vui lòng kiểm tra lỗi và thử lại."
+    exit 1
 fi
 
 # Cài đặt các gói npm

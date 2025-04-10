@@ -8,7 +8,7 @@ const pTimeout = require('p-timeout');
 const WHISPER_TIMEOUT = 7200000; // 2 giờ (7,200,000 ms)
 
 /**
- * Trích xuất phụ đề từ video sử dụng Whisper
+ * Trích xuất phụ đề từ video sử dụng Faster-Whisper
  * @param {string} videoPath - Đường dẫn đến file video
  * @returns {Promise<string>} - Đường dẫn đến file SRT được tạo
  */
@@ -17,44 +17,115 @@ async function extractSubtitles(videoPath) {
 		const videoName = path.basename(videoPath, path.extname(videoPath));
 		const outputPath = path.join(config.uploadPath, `${videoName}.srt`);
 
-		// Kiểm tra xem whisper có được cài đặt không
-		const checkWhisperCmd = 'which whisper || echo "not found"';
-		const whisperPath = await new Promise((resolve, reject) => {
-			exec(checkWhisperCmd, (error, stdout, stderr) => {
+		// Kiểm tra xem python có được cài đặt không
+		const checkPythonCmd = 'which python3 || echo "not found"';
+		const pythonPath = await new Promise((resolve, reject) => {
+			exec(checkPythonCmd, (error, stdout, stderr) => {
 				if (error) {
-					console.error(`Không thể kiểm tra whisper: ${error.message}`);
+					console.error(`Không thể kiểm tra python3: ${error.message}`);
 				}
 				resolve(stdout.trim());
 			});
 		});
 
-		if (whisperPath === 'not found') {
+		if (pythonPath === 'not found') {
 			throw new Error(
-				'Whisper chưa được cài đặt hoặc không có trong PATH. Vui lòng cài đặt whisper và đảm bảo nó có trong PATH.'
+				'Python3 chưa được cài đặt hoặc không có trong PATH. Vui lòng cài đặt Python và đảm bảo nó có trong PATH.'
 			);
 		}
 
 		console.log(`Đang xử lý video: ${videoPath}`);
 		console.log(`Sử dụng model: ${config.whisperModel}`);
 
+		// Tạo script Python tạm thời để chạy faster-whisper
+		const tempScriptPath = path.join(
+			config.uploadPath,
+			'faster_whisper_script.py'
+		);
+		const pythonScript = `
+import sys
+import os
+from faster_whisper import WhisperModel
+
+# Kiểm tra tham số đầu vào
+if len(sys.argv) < 4:
+    print("Sử dụng: python3 script.py video_path output_dir model_name")
+    sys.exit(1)
+
+def format_timestamp(seconds):
+    """Chuyển đổi thời gian từ giây sang định dạng SRT (00:00:00,000)"""
+    hours = int(seconds / 3600)
+    minutes = int((seconds % 3600) / 60)
+    secs = seconds % 60
+    millisecs = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{int(secs):02d},{millisecs:03d}"
+
+video_path = sys.argv[1]
+output_dir = sys.argv[2]
+model_name = sys.argv[3]
+language = sys.argv[4] if len(sys.argv) > 4 else "ja"
+
+print(f"Đang xử lý video: {video_path}")
+print(f"Thư mục đầu ra: {output_dir}")
+print(f"Model: {model_name}")
+print(f"Ngôn ngữ: {language}")
+
+# Tạo tên file đầu ra
+video_name = os.path.basename(video_path)
+base_name = os.path.splitext(video_name)[0]
+srt_path = os.path.join(output_dir, f"{base_name}.srt")
+
+# Tải model
+print("Đang tải model faster-whisper...")
+model = WhisperModel(model_name, device="cpu", compute_type="int8")
+
+# Thực hiện chuyển giọng nói thành văn bản
+print("Đang thực hiện chuyển đổi...")
+segments, info = model.transcribe(video_path, language=language, beam_size=5)
+
+print(f"Phát hiện ngôn ngữ: {info.language}, độ tin cậy: {info.language_probability:.2f}")
+
+# Ghi kết quả vào file SRT
+with open(srt_path, "w", encoding="utf-8") as srt_file:
+    for i, segment in enumerate(segments, start=1):
+        # Định dạng thời gian SRT (00:00:00,000 --> 00:00:00,000)
+        start_time = format_timestamp(segment.start)
+        end_time = format_timestamp(segment.end)
+        
+        # Ghi vào file SRT
+        srt_file.write(f"{i}\\n")
+        srt_file.write(f"{start_time} --> {end_time}\\n")
+        srt_file.write(f"{segment.text.strip()}\\n\\n")
+
+print(f"Đã tạo file SRT thành công: {srt_path}")
+`;
+
+		// Ghi script Python vào file tạm thời
+		await fs.writeFile(tempScriptPath, pythonScript);
+
 		const whisperPromise = new Promise((resolve, reject) => {
-			// Sử dụng Whisper CLI để trích xuất phụ đề
-			const command = `whisper "${videoPath}" --model ${config.whisperModel} --language ja --output_format srt --output_dir "${config.uploadPath}"`;
+			// Sử dụng Faster-Whisper thông qua Python script
+			const command = `python3 "${tempScriptPath}" "${videoPath}" "${config.uploadPath}" ${config.whisperModel} ja`;
 			console.log(`Thực thi lệnh: ${command}`);
 
 			// Không giới hạn timeout để xử lý video dài
 			const childProcess = exec(command, {}, (error, stdout, stderr) => {
+				// Xóa file script tạm thời
+				fs.remove(tempScriptPath).catch((err) => {
+					console.error(`Lỗi khi xóa file script tạm thời: ${err.message}`);
+				});
+
 				if (error) {
-					console.error(`Whisper error: ${error.message}`);
+					console.error(`Faster-Whisper error: ${error.message}`);
 					reject(error);
 					return;
 				}
 
 				if (stderr) {
-					console.log(`Whisper stderr: ${stderr}`);
+					console.log(`Faster-Whisper stderr: ${stderr}`);
 				}
 
-				console.log(`Whisper stdout: ${stdout}`);
+				console.log(`Faster-Whisper stdout: ${stdout}`);
 
 				// Kiểm tra xem file SRT có tồn tại không
 				fs.access(outputPath, fs.constants.F_OK, (err) => {
@@ -87,7 +158,7 @@ async function extractSubtitles(videoPath) {
 
 			// Hiển thị tiến trình
 			childProcess.stdout?.on('data', (data) => {
-				console.log(`Whisper tiến trình: ${data}`);
+				console.log(`Faster-Whisper tiến trình: ${data}`);
 			});
 		});
 
@@ -95,7 +166,7 @@ async function extractSubtitles(videoPath) {
 		return pTimeout(
 			whisperPromise,
 			WHISPER_TIMEOUT,
-			`Quá thời gian (${WHISPER_TIMEOUT / 1000 / 60} phút) khi trích xuất phụ đề video với Whisper`
+			`Quá thời gian (${WHISPER_TIMEOUT / 1000 / 60} phút) khi trích xuất phụ đề video với Faster-Whisper`
 		);
 	} catch (error) {
 		console.error('Error extracting subtitles:', error);
@@ -120,7 +191,7 @@ async function transcribeVideo(videoPath, model = 'tiny') {
 		}
 
 		// Thử kiểm tra file video bằng ffmpeg
-		const ffmpegCheck = await new Promise((resolve, reject) => {
+		await new Promise((resolve, reject) => {
 			const process = exec(
 				`ffmpeg -v error -i "${videoPath}" -f null - 2>&1`,
 				(error, stdout, stderr) => {
@@ -133,21 +204,90 @@ async function transcribeVideo(videoPath, model = 'tiny') {
 			);
 		});
 
-		// Thực thi lệnh whisper
-		const command = `whisper "${videoPath}" --model ${model} --language ja --output_format srt --output_dir "./uploads"`;
-		console.log(`Thực thi lệnh: ${command}`);
+		// Tạo script Python tạm thời để chạy faster-whisper
+		const videoName = path.basename(videoPath, path.extname(videoPath));
+		const outputPath = path.join('./uploads', `${videoName}.srt`);
+		const tempScriptPath = path.join('./uploads', 'faster_whisper_temp.py');
 
-		const { stdout, stderr } = await execPromise(command);
-		console.log('Whisper stdout:', stdout);
-		console.log('Whisper stderr:', stderr);
+		const pythonScript = `
+import sys
+import os
+from faster_whisper import WhisperModel
+
+def format_timestamp(seconds):
+    """Chuyển đổi thời gian từ giây sang định dạng SRT (00:00:00,000)"""
+    hours = int(seconds / 3600)
+    minutes = int((seconds % 3600) / 60)
+    secs = seconds % 60
+    millisecs = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{int(secs):02d},{millisecs:03d}"
+
+video_path = "${videoPath.replace(/\\/g, '\\\\')}"
+model_name = "${model}"
+output_dir = "./uploads"
+language = "ja"
+
+print(f"Đang xử lý video: {video_path}")
+print(f"Model: {model_name}")
+
+# Tạo tên file đầu ra
+video_name = os.path.basename(video_path)
+base_name = os.path.splitext(video_name)[0]
+srt_path = os.path.join(output_dir, f"{base_name}.srt")
+
+# Tải model
+print("Đang tải model faster-whisper...")
+model = WhisperModel(model_name, device="cpu", compute_type="int8")
+
+# Thực hiện chuyển giọng nói thành văn bản
+print("Đang thực hiện chuyển đổi...")
+segments, info = model.transcribe(video_path, language=language, beam_size=5)
+
+print(f"Phát hiện ngôn ngữ: {info.language}, độ tin cậy: {info.language_probability:.2f}")
+
+# Ghi kết quả vào file SRT
+with open(srt_path, "w", encoding="utf-8") as srt_file:
+    for i, segment in enumerate(segments, start=1):
+        # Định dạng thời gian SRT (00:00:00,000 --> 00:00:00,000)
+        start_time = format_timestamp(segment.start)
+        end_time = format_timestamp(segment.end)
+        
+        # Ghi vào file SRT
+        srt_file.write(f"{i}\\n")
+        srt_file.write(f"{start_time} --> {end_time}\\n")
+        srt_file.write(f"{segment.text.strip()}\\n\\n")
+
+print(f"Đã tạo file SRT thành công: {srt_path}")
+`;
+
+		// Ghi script Python vào file tạm thời
+		await fs.writeFile(tempScriptPath, pythonScript);
+
+		// Chạy script Python
+		const { stdout, stderr } = await new Promise((resolve, reject) => {
+			exec(`python3 "${tempScriptPath}"`, (error, stdout, stderr) => {
+				if (error) {
+					reject(new Error(`Faster-Whisper error: ${error.message}`));
+					return;
+				}
+				resolve({ stdout, stderr });
+			});
+		});
+
+		// Xóa script tạm thời
+		await fs.remove(tempScriptPath).catch((err) => {
+			console.error(`Lỗi khi xóa file script tạm thời: ${err.message}`);
+		});
+
+		console.log('Faster-Whisper stdout:', stdout);
+		console.log('Faster-Whisper stderr:', stderr);
 
 		// Kiểm tra file SRT đã được tạo chưa
-		const srtPath = videoPath.replace(/\.[^/.]+$/, '.srt');
-		if (!fs.existsSync(srtPath)) {
+		if (!fs.existsSync(outputPath)) {
 			throw new Error('Không thể tạo file phụ đề');
 		}
 
-		return srtPath;
+		return outputPath;
 	} catch (error) {
 		console.error('Error processing subtitle:', error);
 

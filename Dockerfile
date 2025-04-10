@@ -32,11 +32,11 @@ COPY package*.json ./
 # Cài đặt dependencies cho Node.js với các flags tối ưu
 RUN npm ci --only=production
 
-# Tạo môi trường ảo Python và cài đặt Whisper
+# Tạo môi trường ảo Python và cài đặt Faster-Whisper
 RUN python3.9 -m venv venv && \
     . venv/bin/activate && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir openai-whisper
+    pip install --no-cache-dir faster-whisper
 
 # Tạo thư mục uploads
 RUN mkdir -p ./uploads && chmod 777 ./uploads

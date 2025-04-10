@@ -13,13 +13,13 @@ source venv/bin/activate
 # Thêm đường dẫn môi trường ảo vào PATH
 export PATH="$(pwd)/venv/bin:$PATH"
 
-# Kiểm tra xem whisper đã được cài đặt chưa
-if ! command -v whisper &> /dev/null; then
-    echo "Whisper chưa được cài đặt. Đang cài đặt..."
+# Kiểm tra xem faster-whisper đã được cài đặt chưa
+if ! pip list | grep -q faster-whisper; then
+    echo "Faster-Whisper chưa được cài đặt. Đang cài đặt..."
     pip install --upgrade pip
     pip install setuptools-rust
-    pip install openai-whisper
-    echo "Đã cài đặt Whisper."
+    pip install faster-whisper
+    echo "Đã cài đặt Faster-Whisper."
 fi
 
 # Kiểm tra thư mục uploads

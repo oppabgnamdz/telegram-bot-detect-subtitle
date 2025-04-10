@@ -1,11 +1,11 @@
 # Telegram Bot Tạo Phụ Đề Tự Động
 
-Bot Telegram giúp tạo phụ đề tự động cho video từ URL, sử dụng Whisper để nhận dạng giọng nói và OpenAI API để dịch sang tiếng Việt.
+Bot Telegram giúp tạo phụ đề tự động cho video từ URL, sử dụng Faster-Whisper để nhận dạng giọng nói và OpenAI API để dịch sang tiếng Việt.
 
 ## Tính năng
 
 - Tải video từ URL trực tiếp
-- Trích xuất phụ đề bằng Whisper
+- Trích xuất phụ đề bằng Faster-Whisper (nhanh hơn 4 lần so với Whisper gốc)
 - Dịch phụ đề sang tiếng Việt với OpenAI API
 - Tùy chỉnh prompt dịch thuật
 - Hỗ trợ nhiều loại video và ngôn ngữ
@@ -16,7 +16,7 @@ Bot Telegram giúp tạo phụ đề tự động cho video từ URL, sử dụn
 ## Yêu cầu hệ thống
 
 - Node.js (v14 trở lên)
-- Python 3.8+ (để chạy Whisper)
+- Python 3.8+ (để chạy Faster-Whisper)
 - FFmpeg
 - Kết nối internet ổn định
 
@@ -32,7 +32,7 @@ chmod +x setup.sh
 Script này sẽ:
 
 1. Kiểm tra và cài đặt các yêu cầu (Node.js, Python, FFmpeg)
-2. Tạo môi trường ảo Python và cài đặt Whisper
+2. Tạo môi trường ảo Python và cài đặt Faster-Whisper
 3. Cài đặt các gói npm
 4. Tạo file .env và thư mục uploads
 
@@ -51,13 +51,13 @@ cd telegram-bot-detect-subtitle
 npm install
 ```
 
-### 3. Cài đặt Whisper
+### 3. Cài đặt Faster-Whisper
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install openai-whisper
+pip install faster-whisper
 ```
 
 ### 4. Cấu hình môi trường
@@ -130,21 +130,31 @@ Hoặc sử dụng định dạng HLS (m3u8):
 ## Xử lý sự cố
 
 - **Lỗi timeout**: Nếu xử lý mất quá nhiều thời gian, hãy thử với video ngắn hơn hoặc chọn model Whisper nhỏ hơn trong file .env (tiny, base)
-- **Whisper không được tìm thấy**: Đảm bảo bạn đã kích hoạt môi trường ảo Python trước khi chạy bot
+- **Lỗi Python**: Đảm bảo bạn đã kích hoạt môi trường ảo Python trước khi chạy bot
 - **Lỗi tải video**: Kiểm tra URL, đảm bảo nó là URL trực tiếp đến file video
 
 ## Lưu ý
 
-- Bot có thể mất 5-10 phút để xử lý video dài, tùy thuộc vào model Whisper được chọn
+- Bot có thể mất 2-5 phút để xử lý video dài, tùy thuộc vào model Faster-Whisper được chọn (nhanh hơn 4 lần so với Whisper gốc)
 - Cần đảm bảo URL video là trực tiếp và có thể tải được
 - Model Whisper nhỏ hơn (tiny, base) xử lý nhanh hơn nhưng kém chính xác hơn
 - Model Whisper lớn hơn (medium, large) chính xác hơn nhưng chậm hơn và cần nhiều RAM
+
+## So sánh Faster-Whisper với Whisper gốc
+
+Faster-Whisper là phiên bản được tối ưu hóa của Whisper, sử dụng CTranslate2 để tăng tốc quá trình xử lý:
+
+- **Tốc độ**: Nhanh hơn 4 lần so với Whisper gốc
+- **Bộ nhớ**: Sử dụng ít RAM hơn (model large có thể chạy trên GPU với 4GB VRAM)
+- **Độ chính xác**: Có cùng độ chính xác với Whisper gốc
+- **Khả năng phân đoạn**: Cải thiện việc phân đoạn phụ đề theo câu
+- **Hỗ trợ chạy trên GPU**: Tối ưu hóa để chạy trên cả CPU và GPU
 
 ## Tối ưu chi phí OpenAI
 
 Để tối ưu chi phí sử dụng OpenAI API, bạn có thể:
 
-1. **Whisper**:
+1. **Faster-Whisper**:
 
    - Sử dụng model `tiny` thay vì `base` hoặc `large` (mặc định đã được cấu hình)
    - Chỉ sử dụng model lớn hơn khi cần độ chính xác cao

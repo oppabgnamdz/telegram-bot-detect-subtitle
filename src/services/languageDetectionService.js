@@ -42,13 +42,74 @@ async function detectLanguage(videoPath) {
 			});
 		});
 
-		// Sử dụng whisper để phát hiện ngôn ngữ
+		// Sử dụng faster-whisper để phát hiện ngôn ngữ
 		const languageDetectionPromise = new Promise((resolve, reject) => {
-			// Sử dụng tham số --language ja để luôn coi ngôn ngữ là tiếng Nhật
-			const command = `whisper "${samplePath}" --model tiny --language ja --task transcribe --output_format json --output_dir "${config.uploadPath}"`;
-			console.log(`Thực thi Whisper để phát hiện ngôn ngữ: ${command}`);
+			// Tạo script Python tạm thời để chạy faster-whisper
+			const tempScriptPath = path.join(
+				config.uploadPath,
+				'faster_whisper_language_detection.py'
+			);
+			const pythonScript = `
+import sys
+import os
+import json
+from faster_whisper import WhisperModel
+
+sample_path = "${samplePath.replace(/\\/g, '\\\\')}"
+output_dir = "${config.uploadPath.replace(/\\/g, '\\\\')}"
+base_name = os.path.basename(sample_path)
+json_path = os.path.join(output_dir, f"{os.path.splitext(base_name)[0]}.json")
+
+print(f"Đang phát hiện ngôn ngữ từ: {sample_path}")
+
+# Tải model
+print("Đang tải model faster-whisper tiny...")
+model = WhisperModel("tiny", device="cpu", compute_type="int8")
+
+# Thực hiện chuyển đổi và phát hiện ngôn ngữ
+# Mặc định luôn coi ngôn ngữ là tiếng Nhật
+segments, info = model.transcribe(sample_path, language="ja", task="transcribe")
+
+# Ghi kết quả vào file JSON
+output = {
+    "language": "ja", # Mặc định luôn trả về tiếng Nhật
+    "language_probability": 1.0,
+    "segments": []
+}
+
+for segment in segments:
+    output["segments"].append({
+        "id": segment.id,
+        "start": segment.start,
+        "end": segment.end,
+        "text": segment.text
+    })
+
+with open(json_path, "w", encoding="utf-8") as f:
+    json.dump(output, f, ensure_ascii=False, indent=2)
+
+print(f"Đã lưu kết quả vào: {json_path}")
+print(f"Ngôn ngữ được phát hiện: {output['language']}")
+`;
+
+			// Ghi script Python vào file tạm thời
+			fs.writeFileSync(tempScriptPath, pythonScript);
+
+			// Thực thi script Python
+			const command = `python3 "${tempScriptPath}"`;
+			console.log(`Thực thi Faster-Whisper để phát hiện ngôn ngữ: ${command}`);
 
 			exec(command, (error, stdout, stderr) => {
+				// Xóa file script tạm thời
+				try {
+					fs.unlinkSync(tempScriptPath);
+					console.log(`Đã xóa file script tạm thời: ${tempScriptPath}`);
+				} catch (scriptCleanupError) {
+					console.error(
+						`Lỗi khi xóa file script tạm thời: ${scriptCleanupError.message}`
+					);
+				}
+
 				// Xóa file mẫu âm thanh
 				try {
 					fs.unlinkSync(samplePath);
@@ -58,7 +119,7 @@ async function detectLanguage(videoPath) {
 				}
 
 				if (error) {
-					console.error(`Lỗi Whisper: ${error.message}`);
+					console.error(`Lỗi Faster-Whisper: ${error.message}`);
 					reject(error);
 					return;
 				}
